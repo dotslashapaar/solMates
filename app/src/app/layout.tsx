@@ -28,10 +28,10 @@ export default function RootLayout({
         <WalletContextProvider>
           <div className="flex flex-col min-h-screen">
             <Navbar />
-            <main className="flex-1">{children}</main>
+            <main className="flex-1 pt-16">{children}</main>
             <footer className="border-t border-[#1a1a2e] py-8">
               <div className="container mx-auto px-4 text-center text-[#a1a1aa]">
-                <p>© 2024 SolMates. Built on Solana. 💜</p>
+                <p>© 2025 SolMates. Built on Solana. 💜</p>
               </div>
             </footer>
           </div>
