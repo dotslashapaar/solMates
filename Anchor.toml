@@ -8,11 +8,14 @@ skip-lint = false
 [programs.localnet]
 solmates = "4G4MoTN3yYJbCWSHQtKoKK645xrbw2C3yDiy52n8rSrb"
 
+[programs.devnet]
+solmates = "4G4MoTN3yYJbCWSHQtKoKK645xrbw2C3yDiy52n8rSrb"
+
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
