@@ -3,6 +3,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { WalletContextProvider } from "@/components/providers/WalletProvider";
 import { Navbar } from "@/components/layout/Navbar";
+import { Toaster } from "react-hot-toast";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const spaceGrotesk = Space_Grotesk({
@@ -24,17 +25,39 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable}`}>
-      <body className="bg-[#0a0a0f] text-white min-h-screen">
+      <body className="bg-[#0a0a0f] text-white min-h-screen antialiased">
         <WalletContextProvider>
           <div className="flex flex-col min-h-screen">
             <Navbar />
             <main className="flex-1 pt-16">{children}</main>
-            <footer className="border-t border-[#1a1a2e] py-8">
-              <div className="container mx-auto px-4 text-center text-[#a1a1aa]">
-                <p>© 2025 SolMates. Built on Solana. 💜</p>
+            <footer className="border-t border-white/5 py-8 bg-[#0a0a0f]">
+              <div className="container mx-auto px-4 text-center text-slate-600">
+                <p>© 2025 SolMates. Built on Solana. 🔥</p>
               </div>
             </footer>
           </div>
+          <Toaster 
+            position="bottom-right"
+            toastOptions={{
+              style: {
+                background: '#18181b',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.1)',
+              },
+              success: {
+                iconTheme: {
+                  primary: '#f43f5e',
+                  secondary: '#fff',
+                },
+              },
+              error: {
+                iconTheme: {
+                  primary: '#ef4444',
+                  secondary: '#fff',
+                },
+              },
+            }}
+          />
         </WalletContextProvider>
       </body>
     </html>

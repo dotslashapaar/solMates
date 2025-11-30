@@ -5,13 +5,20 @@ import { cn } from "@/lib/utils";
 interface CardProps {
   className?: string;
   children: React.ReactNode;
+  variant?: "glass" | "gradient-border" | "solid";
 }
 
-export function Card({ className, children }: CardProps) {
+export function Card({ className, children, variant = "glass" }: CardProps) {
   return (
     <div
       className={cn(
-        "bg-[#1a1a2e] border border-[#2a2a4e] rounded-2xl p-6",
+        "rounded-xl p-6",
+        {
+          // Dark solid card (glass and solid have same styles)
+          "bg-zinc-900 border border-white/[0.06]": variant === "glass" || variant === "solid",
+          // Gradient Border
+          "gradient-border": variant === "gradient-border",
+        },
         className
       )}
     >
@@ -20,7 +27,7 @@ export function Card({ className, children }: CardProps) {
   );
 }
 
-export function CardHeader({ className, children }: CardProps) {
+export function CardHeader({ className, children }: { className?: string; children: React.ReactNode }) {
   return <div className={cn("mb-4", className)}>{children}</div>;
 }
 
@@ -32,10 +39,10 @@ export function CardTitle({
   children: React.ReactNode;
 }) {
   return (
-    <h3 className={cn("text-xl font-bold text-white", className)}>{children}</h3>
+    <h3 className={cn("text-lg font-semibold text-white", className)}>{children}</h3>
   );
 }
 
-export function CardContent({ className, children }: CardProps) {
+export function CardContent({ className, children }: { className?: string; children: React.ReactNode }) {
   return <div className={cn("", className)}>{children}</div>;
 }

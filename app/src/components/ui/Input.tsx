@@ -11,19 +11,19 @@ export function Input({ label, error, className, ...props }: InputProps) {
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-[#a1a1aa] mb-2">
+        <label className="block text-xs font-medium text-zinc-500 mb-1.5">
           {label}
         </label>
       )}
       <input
         className={cn(
-          "w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a4e] rounded-xl text-white placeholder-[#666] focus:outline-none focus:border-[#ff3366] focus:ring-1 focus:ring-[#ff3366] transition-colors",
-          error && "border-red-500",
+          "w-full px-3 py-2 bg-zinc-900 border border-white/[0.08] rounded-lg text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 transition-all duration-200",
+          error && "border-rose-500 focus:border-rose-500 focus:ring-rose-500/20",
           className
         )}
         {...props}
       />
-      {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-rose-400">{error}</p>}
     </div>
   );
 }
@@ -38,19 +38,19 @@ export function Textarea({ label, error, className, ...props }: TextareaProps) {
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-[#a1a1aa] mb-2">
+        <label className="block text-xs font-medium text-zinc-500 mb-1.5">
           {label}
         </label>
       )}
       <textarea
         className={cn(
-          "w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a4e] rounded-xl text-white placeholder-[#666] focus:outline-none focus:border-[#ff3366] focus:ring-1 focus:ring-[#ff3366] transition-colors resize-none",
-          error && "border-red-500",
+          "w-full px-3 py-2 bg-zinc-900 border border-white/[0.08] rounded-lg text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 transition-all duration-200 resize-none",
+          error && "border-rose-500 focus:border-rose-500 focus:ring-rose-500/20",
           className
         )}
         {...props}
       />
-      {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-rose-400">{error}</p>}
     </div>
   );
 }

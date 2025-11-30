@@ -1,27 +1,39 @@
 "use client";
 
-import Image from "next/image";
-import { Heart, MessageCircle, X, MapPin, Briefcase } from "lucide-react";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import { MapPin, MessageCircle, User } from "lucide-react";
 import { formatUsdc, shortenAddress } from "@/lib/constants";
+import type { GenderType } from "@/lib/supabase/types";
+
+// Helper to format gender for display
+function formatGender(gender: GenderType): string {
+  switch (gender) {
+    case "male": return "Man";
+    case "female": return "Woman";
+    case "non-binary": return "Non-binary";
+    case "other": return "Other";
+    default: return gender;
+  }
+}
 
 export interface ProfileCardProps {
   wallet?: string;
   address?: string;
   name: string;
   age: number;
+  gender?: GenderType;
   bio: string;
   location?: string;
   occupation?: string;
   imageUrl?: string;
   dmPrice: number;
   interests?: string[];
+  gradient?: string;
   showActions?: boolean;
   onLike?: () => void;
   onPass?: () => void;
   onMessage?: () => void;
   onSuperLike?: () => void;
+  photos?: string[];
 }
 
 export function ProfileCard({
@@ -29,119 +41,104 @@ export function ProfileCard({
   address,
   name,
   age,
+  gender,
   bio,
   location,
-  occupation,
-  imageUrl,
   dmPrice,
   interests,
+  gradient = "from-rose-500 to-pink-600",
   showActions = true,
-  onLike,
-  onPass,
   onMessage,
-  onSuperLike,
 }: ProfileCardProps) {
   const displayAddress = wallet || address || "";
+  
   return (
-    <Card className="overflow-hidden max-w-sm mx-auto">
-      {/* Profile Image */}
-      <div className="relative h-96 -m-6 mb-4">
-        {imageUrl ? (
-          <Image
-            src={imageUrl}
-            alt={name}
-            fill
-            className="object-cover"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[#ff3366] to-[#6366f1] flex items-center justify-center">
-            <span className="text-6xl font-bold text-white">
-              {name.charAt(0).toUpperCase()}
-            </span>
-          </div>
-        )}
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent" />
+    <div className="bg-zinc-900 rounded-2xl overflow-hidden border border-white/[0.06] shadow-xl">
+      {/* Profile Image Area */}
+      <div className={`relative aspect-[3/4] bg-gradient-to-br ${gradient}`}>
+        {/* Subtle pattern overlay */}
+        <div className="absolute inset-0 opacity-5" style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
+        }} />
+        
+        {/* Avatar Initial */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[100px] font-bold text-white/20">
+            {name.charAt(0).toUpperCase()}
+          </span>
+        </div>
+        
+        {/* Bottom gradient - smooth fade to card background */}
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-900 from-10% via-zinc-900/60 via-50% to-transparent" />
         
         {/* Info overlay */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <h2 className="text-2xl font-bold text-white">
+        <div className="absolute bottom-0 left-0 right-0 p-5">
+          <h2 className="text-2xl font-semibold text-white mb-1">
             {name}, {age}
           </h2>
-          {location && (
-            <div className="flex items-center gap-1 text-[#a1a1aa] mt-1">
-              <MapPin className="w-4 h-4" />
-              <span className="text-sm">{location}</span>
-            </div>
-          )}
-          {occupation && (
-            <div className="flex items-center gap-1 text-[#a1a1aa]">
-              <Briefcase className="w-4 h-4" />
-              <span className="text-sm">{occupation}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {gender && (
+              <div className="flex items-center gap-1.5 text-white/60">
+                <User className="w-3.5 h-3.5" />
+                <span className="text-sm">{formatGender(gender)}</span>
+              </div>
+            )}
+            {location && (
+              <div className="flex items-center gap-1.5 text-white/60">
+                <MapPin className="w-3.5 h-3.5" />
+                <span className="text-sm">{location}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Bio */}
-      <p className="text-[#a1a1aa] text-sm mb-4 line-clamp-3">{bio}</p>
+      {/* Content */}
+      <div className="p-5 space-y-4">
+        {/* Bio */}
+        <p className="text-zinc-400 text-sm leading-relaxed">{bio}</p>
 
-      {/* DM Price */}
-      <div className="flex items-center justify-between mb-4 p-3 bg-[#0a0a0a] rounded-xl">
-        <span className="text-[#a1a1aa] text-sm">DM Price</span>
-        <span className="text-[#ff3366] font-bold">
-          {formatUsdc(dmPrice)} USDC
-        </span>
-      </div>
+        {/* Interests */}
+        {interests && interests.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {interests.map((interest, i) => (
+              <span
+                key={i}
+                className="px-2.5 py-1 bg-white/[0.04] border border-white/[0.06] rounded-md text-xs text-zinc-400"
+              >
+                {interest}
+              </span>
+            ))}
+          </div>
+        )}
 
-      {/* Wallet Address */}
-      {displayAddress && (
-        <p className="text-xs text-[#666] mb-4 font-mono">
-          {shortenAddress(displayAddress, 8)}
-        </p>
-      )}
-
-      {/* Interests */}
-      {interests && interests.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {interests.map((interest, i) => (
-            <span
-              key={i}
-              className="px-3 py-1 bg-[#1a1a2e] rounded-full text-xs text-[#a1a1aa]"
+        {/* DM Price */}
+        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
+          <div>
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-0.5">DM Price</p>
+            <p className="text-lg font-semibold text-white">
+              {formatUsdc(dmPrice)} <span className="text-zinc-500 text-sm font-normal">USDC</span>
+            </p>
+          </div>
+          
+          {onMessage && (
+            <button
+              onClick={onMessage}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white text-sm font-medium rounded-lg transition-all shadow-lg shadow-rose-500/20"
             >
-              {interest}
-            </span>
-          ))}
+              <MessageCircle className="w-4 h-4" />
+              Send DM
+            </button>
+          )}
         </div>
-      )}
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-center gap-4">
-        {onPass && (
-          <button
-            onClick={onPass}
-            className="w-14 h-14 rounded-full border-2 border-[#2a2a4e] flex items-center justify-center text-[#a1a1aa] hover:border-red-500 hover:text-red-500 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        )}
-        {onMessage && (
-          <button
-            onClick={onMessage}
-            className="w-16 h-16 rounded-full gradient-secondary flex items-center justify-center text-white glow-secondary"
-          >
-            <MessageCircle className="w-7 h-7" />
-          </button>
-        )}
-        {onLike && (
-          <button
-            onClick={onLike}
-            className="w-14 h-14 rounded-full gradient-primary flex items-center justify-center text-white glow-primary"
-          >
-            <Heart className="w-6 h-6" />
-          </button>
+        {/* Wallet */}
+        {displayAddress && (
+          <p className="text-[10px] text-zinc-700 font-mono">
+            {shortenAddress(displayAddress, 8)}
+          </p>
         )}
       </div>
-    </Card>
+    </div>
   );
 }

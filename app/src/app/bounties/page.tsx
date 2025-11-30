@@ -1,51 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
-import { Users, Gift, Target, Plus, Check } from "lucide-react";
-
-// Mock bounties for demo
-const MOCK_BOUNTIES = [
-  {
-    id: "1",
-    creator: "LonelyWhale",
-    creatorWallet: "9xYZ...1aBc",
-    description:
-      "Looking for a fellow crypto enthusiast who loves hiking and has diamond hands. Must be into long-term HODLing (relationships too).",
-    reward: 100,
-    totalSubmissions: 5,
-    status: "active",
-    preferences: ["25-35 years", "Crypto native", "Outdoorsy"],
-  },
-  {
-    id: "2",
-    creator: "SolanaSam",
-    creatorWallet: "2dEF...3gHi",
-    description:
-      "Help me find a co-founder for my life project. Must appreciate good code and bad puns. Validators preferred but not required.",
-    reward: 250,
-    totalSubmissions: 12,
-    status: "active",
-    preferences: ["Tech-savvy", "Sense of humor", "Ambitious"],
-  },
-  {
-    id: "3",
-    creator: "MetaverseMary",
-    creatorWallet: "4jKL...5mNo",
-    description:
-      "Searching for someone who can handle me in both IRL and the metaverse. Must own at least one blue-chip NFT (jk... unless?)",
-    reward: 75,
-    totalSubmissions: 8,
-    status: "active",
-    preferences: ["NFT collector", "Creative", "Open-minded"],
-  },
-];
+import { Users, Gift, Target, Plus, Check, Loader2 } from "lucide-react";
+import { useBounties, useCreateBounty } from "@/hooks/useBounties";
+import { useProfile } from "@/hooks/useProfiles";
+import { shortenAddress, formatUsdc, parseUsdc } from "@/lib/constants";
+import type { Bounty } from "@/lib/supabase";
 
 export default function BountiesPage() {
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newBounty, setNewBounty] = useState({
     description: "",
@@ -53,190 +21,279 @@ export default function BountiesPage() {
     preferences: "",
   });
 
+  const { bounties, loading, error, refetch } = useBounties({ status: "open" });
+  const { createBounty, loading: creating } = useCreateBounty();
+
   const handleSubmitMatch = (bountyId: string) => {
     console.log(`Submitting match for bounty ${bountyId}`);
-    // In real app, open modal to submit a match
+    // TODO: Open modal to submit a match
   };
 
-  const handleCreateBounty = () => {
-    console.log("Creating bounty:", newBounty);
-    setShowCreateForm(false);
-    // In real app, call on-chain instruction
+  const handleCreateBounty = async () => {
+    if (!publicKey || !newBounty.description || !newBounty.reward) return;
+    
+    const preferences = newBounty.preferences
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    // TODO: Call on-chain createBounty first, then record in Supabase
+    const result = await createBounty({
+      issuer_wallet: publicKey.toBase58(),
+      description: newBounty.description,
+      preferences,
+      reward_amount: parseUsdc(newBounty.reward),
+    });
+    
+    if (result) {
+      setShowCreateForm(false);
+      setNewBounty({ description: "", reward: "", preferences: "" });
+      refetch();
+    }
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold font-space-grotesk">
-            Matchmaker Bounties
-          </h1>
-          <p className="text-[#a1a1aa]">
-            Help others find love and earn rewards
-          </p>
-        </div>
-        {connected && (
-          <Button onClick={() => setShowCreateForm(!showCreateForm)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Bounty
-          </Button>
-        )}
+    <div className="min-h-screen">
+      {/* Subtle decorative background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-rose-500/[0.03] rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-orange-500/[0.03] rounded-full blur-[80px]" />
       </div>
 
-      {/* Create Bounty Form */}
-      {showCreateForm && (
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Create a Matchmaker Bounty</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              label="Describe your ideal match"
-              value={newBounty.description}
-              onChange={(e) =>
-                setNewBounty({ ...newBounty, description: e.target.value })
-              }
-              placeholder="Tell matchmakers what you're looking for..."
-              rows={4}
-            />
-            <Input
-              label="Reward Amount (USDC)"
-              type="number"
-              value={newBounty.reward}
-              onChange={(e) =>
-                setNewBounty({ ...newBounty, reward: e.target.value })
-              }
-              placeholder="100"
-            />
-            <Input
-              label="Preferences (comma-separated)"
-              value={newBounty.preferences}
-              onChange={(e) =>
-                setNewBounty({ ...newBounty, preferences: e.target.value })
-              }
-              placeholder="Age range, interests, location..."
-            />
-            <div className="flex gap-4">
-              <Button onClick={handleCreateBounty}>Create Bounty</Button>
-              <Button variant="ghost" onClick={() => setShowCreateForm(false)}>
-                Cancel
-              </Button>
+      <div className="relative container mx-auto px-4 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-3">
+            <div className="relative w-10 h-10 rounded-full overflow-hidden bg-zinc-900 ring-1 ring-white/10">
+              <Image
+                src="/logo.png"
+                alt="SolMates Logo"
+                fill
+                className="object-cover"
+              />
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div>
+              <h1 className="text-2xl font-semibold">
+                <span className="gradient-flame-text">Matchmaker Bounties</span>
+              </h1>
+              <p className="text-zinc-500 text-sm">
+                Help others find love and earn rewards
+              </p>
+            </div>
+          </div>
+          {connected && (
+            <Button onClick={() => setShowCreateForm(!showCreateForm)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Bounty
+            </Button>
+          )}
+        </div>
 
-      {/* Bounties List */}
-      <div className="space-y-6">
-        {MOCK_BOUNTIES.map((bounty) => (
-          <Card key={bounty.id}>
+        {/* Create Bounty Form */}
+        {showCreateForm && (
+          <Card className="mb-8 rounded-xl bg-zinc-900 border-white/[0.06]">
+            <CardHeader>
+              <CardTitle className="gradient-flame-text">
+                Create a Matchmaker Bounty
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                label="Describe your ideal match"
+                value={newBounty.description}
+                onChange={(e) =>
+                  setNewBounty({ ...newBounty, description: e.target.value })
+                }
+                placeholder="Tell matchmakers what you're looking for..."
+                rows={4}
+              />
+              <Input
+                label="Reward Amount (USDC)"
+                type="number"
+                value={newBounty.reward}
+                onChange={(e) =>
+                  setNewBounty({ ...newBounty, reward: e.target.value })
+                }
+                placeholder="100"
+              />
+              <Input
+                label="Preferences (comma-separated)"
+                value={newBounty.preferences}
+                onChange={(e) =>
+                  setNewBounty({ ...newBounty, preferences: e.target.value })
+                }
+                placeholder="Age range, interests, location..."
+              />
+              <div className="flex gap-3 pt-2">
+                <Button onClick={handleCreateBounty} disabled={creating}>
+                  {creating ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : null}
+                  Create Bounty
+                </Button>
+                <Button variant="ghost" onClick={() => setShowCreateForm(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Bounties List */}
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 text-rose-500 animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <p className="text-red-400 mb-4">{error}</p>
+            <Button onClick={() => refetch()}>Try Again</Button>
+          </div>
+        ) : bounties.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-zinc-500 mb-4">No active bounties at the moment</p>
+            {connected && (
+              <Button onClick={() => setShowCreateForm(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create the first bounty
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {bounties.map((bounty) => (
+              <BountyCard
+                key={bounty.id}
+                bounty={bounty}
+                onSubmitMatch={() => handleSubmitMatch(bounty.id)}
+                connected={connected}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* How it works */}
+        <div className="mt-12">
+          <Card className="rounded-xl bg-zinc-900 border-white/[0.06]">
             <CardContent className="p-6">
-              <div className="flex flex-col lg:flex-row gap-6">
-                {/* Left side - Bounty info */}
-                <div className="flex-1 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-500 rounded-full flex items-center justify-center">
-                      <Users className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-lg">{bounty.creator}</h3>
-                      <p className="text-xs text-[#a1a1aa]">
-                        {bounty.creatorWallet}
-                      </p>
-                    </div>
+              <h2 className="text-lg font-semibold mb-6 text-center">
+                <span className="gradient-flame-text">How Matchmaker Bounties Work</span>
+              </h2>
+              <div className="grid md:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-rose-500/10 rounded-lg flex items-center justify-center mx-auto mb-3">
+                    <span className="text-sm font-semibold text-rose-400">1</span>
                   </div>
-
-                  <p className="text-[#a1a1aa]">{bounty.description}</p>
-
-                  <div className="flex flex-wrap gap-2">
-                    {bounty.preferences.map((pref, i) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 bg-[#1a1a2e] rounded-full text-xs"
-                      >
-                        {pref}
-                      </span>
-                    ))}
-                  </div>
+                  <h3 className="font-medium text-white text-sm mb-1">Create a Bounty</h3>
+                  <p className="text-xs text-zinc-500">
+                    Describe your ideal match and set a reward amount in USDC.
+                  </p>
                 </div>
-
-                {/* Right side - Stats and action */}
-                <div className="lg:w-64 space-y-4">
-                  <div className="p-4 bg-gradient-to-br from-pink-500/20 to-purple-500/20 rounded-xl text-center">
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <Gift className="w-5 h-5 text-pink-500" />
-                      <span className="text-2xl font-bold">${bounty.reward}</span>
-                    </div>
-                    <p className="text-sm text-[#a1a1aa]">Bounty Reward</p>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center mx-auto mb-3">
+                    <span className="text-sm font-semibold text-orange-400">2</span>
                   </div>
-
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-[#a1a1aa]">Submissions</span>
-                    <span className="flex items-center gap-1">
-                      <Target className="w-4 h-4 text-purple-500" />
-                      {bounty.totalSubmissions}
-                    </span>
+                  <h3 className="font-medium text-white text-sm mb-1">Matchmakers Submit</h3>
+                  <p className="text-xs text-zinc-500">
+                    Friends and strangers submit potential matches for your
+                    consideration.
+                  </p>
+                </div>
+                <div className="text-center">
+                  <div className="w-10 h-10 bg-rose-500/10 rounded-lg flex items-center justify-center mx-auto mb-3">
+                    <span className="text-sm font-semibold text-rose-400">3</span>
                   </div>
-
-                  {connected ? (
-                    <Button
-                      className="w-full"
-                      onClick={() => handleSubmitMatch(bounty.id)}
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Submit a Match
-                    </Button>
-                  ) : (
-                    <p className="text-center text-sm text-[#a1a1aa]">
-                      Connect wallet to submit
-                    </p>
-                  )}
+                  <h3 className="font-medium text-white text-sm mb-1">Accept & Reward</h3>
+                  <p className="text-xs text-zinc-500">
+                    When you find a match you like, the matchmaker receives the
+                    reward automatically.
+                  </p>
                 </div>
               </div>
             </CardContent>
           </Card>
-        ))}
+        </div>
       </div>
+    </div>
+  );
+}
 
-      {/* How it works */}
-      <Card className="mt-12 bg-gradient-to-br from-purple-500/10 to-transparent">
-        <CardContent className="p-8">
-          <h2 className="text-2xl font-bold mb-6 text-center font-space-grotesk">
-            How Matchmaker Bounties Work
-          </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-pink-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-xl font-bold text-pink-500">1</span>
+function BountyCard({
+  bounty,
+  onSubmitMatch,
+  connected,
+}: {
+  bounty: Bounty;
+  onSubmitMatch: () => void;
+  connected: boolean;
+}) {
+  const { profile } = useProfile(bounty.issuer_wallet);
+  const displayName = profile?.name || shortenAddress(bounty.issuer_wallet);
+
+  return (
+    <Card className="rounded-xl bg-zinc-900 border-white/[0.06]">
+      <CardContent className="p-5">
+        <div className="flex flex-col lg:flex-row gap-5">
+          {/* Left side - Bounty info */}
+          <div className="flex-1 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-rose-500/10 rounded-lg flex items-center justify-center">
+                <Users className="w-5 h-5 text-rose-400" />
               </div>
-              <h3 className="font-bold mb-2">Create a Bounty</h3>
-              <p className="text-sm text-[#a1a1aa]">
-                Describe your ideal match and set a reward amount in USDC.
-              </p>
+              <div>
+                <h3 className="font-semibold text-white">{displayName}</h3>
+                <p className="text-[10px] text-zinc-600 font-mono">
+                  {shortenAddress(bounty.issuer_wallet)}
+                </p>
+              </div>
             </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-xl font-bold text-purple-500">2</span>
-              </div>
-              <h3 className="font-bold mb-2">Matchmakers Submit</h3>
-              <p className="text-sm text-[#a1a1aa]">
-                Friends and strangers submit potential matches for your
-                consideration.
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-xl font-bold text-indigo-500">3</span>
-              </div>
-              <h3 className="font-bold mb-2">Accept & Reward</h3>
-              <p className="text-sm text-[#a1a1aa]">
-                When you find a match you like, the matchmaker receives the
-                reward automatically.
-              </p>
+
+            <p className="text-zinc-400 text-sm leading-relaxed">{bounty.description}</p>
+
+            <div className="flex flex-wrap gap-1.5">
+              {bounty.preferences.map((pref, i) => (
+                <span
+                  key={i}
+                  className="px-2.5 py-1 bg-white/[0.04] border border-white/[0.06] rounded-md text-xs text-zinc-400"
+                >
+                  {pref}
+                </span>
+              ))}
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+
+          {/* Right side - Stats and action */}
+          <div className="lg:w-56 space-y-3">
+            <div className="p-4 bg-white/[0.03] rounded-lg text-center border border-white/[0.06]">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <Gift className="w-5 h-5 text-rose-400" />
+                <span className="text-2xl font-semibold gradient-flame-text">
+                  ${formatUsdc(bounty.reward_amount)}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500">Bounty Reward</p>
+            </div>
+
+            <div className="flex items-center justify-between text-xs px-1">
+              <span className="text-zinc-600">Status</span>
+              <span className="flex items-center gap-1">
+                <Target className="w-3.5 h-3.5 text-orange-400" />
+                <span className="text-white capitalize">{bounty.status}</span>
+              </span>
+            </div>
+
+            {connected ? (
+              <Button className="w-full" onClick={onSubmitMatch}>
+                <Check className="w-4 h-4 mr-2" />
+                Submit a Match
+              </Button>
+            ) : (
+              <p className="text-center text-xs text-zinc-600 py-2">
+                Connect wallet to submit
+              </p>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
