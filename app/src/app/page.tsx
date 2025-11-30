@@ -22,11 +22,11 @@ export default function Home() {
   const profileCount = profiles.length;
   const auctionCount = auctions.length;
   const matchCount = matches.length;
-  // Estimate escrow value from average DM price
+  // Estimate escrow value from average DM price (dm_price is in USDC lamports, divide by 1M)
   const avgDmPrice = profiles.length > 0 
-    ? profiles.reduce((sum, p) => sum + (p.dm_price || 10), 0) / profiles.length 
-    : 10;
-  const estimatedEscrowVolume = profileCount * avgDmPrice * 2; // Rough estimate
+    ? profiles.reduce((sum, p) => sum + (p.dm_price || 0), 0) / profiles.length / 1_000_000
+    : 0;
+  const estimatedEscrowVolume = profileCount * avgDmPrice * 2; // Rough estimate in USD
 
   return (
     <div className="relative min-h-screen">
@@ -70,11 +70,7 @@ export default function Home() {
 
             <p className="text-xl text-zinc-400 mb-10 max-w-2xl mx-auto leading-relaxed">
               The <span className="text-white font-medium">sultry side</span> of Solana. 
-              <span className="text-zinc-300"> DM escrows</span>, 
-              <span className="text-zinc-300"> date auctions</span>, and 
-              <span className="text-zinc-300"> matchmaker bounties</span>.
-              <br />
-              <span className="gradient-flame-text font-semibold">Serious connections only.</span>
+              Put your SOL where your mouth is on the first dating protocol where <span className="gradient-flame-text font-semibold">talk isn't cheap</span>.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

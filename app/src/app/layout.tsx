@@ -32,7 +32,7 @@ export default function RootLayout({
             <main className="flex-1 pt-16">{children}</main>
             <footer className="border-t border-white/5 py-8 bg-[#0a0a0f]">
               <div className="container mx-auto px-4 text-center text-slate-600">
-                <p>© 2025 SolMates. Built on Solana. 🔥</p>
+                <p>© 2025 SolMates. Built on Solana. 🍑</p>
               </div>
             </footer>
           </div>

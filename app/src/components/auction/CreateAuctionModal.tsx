@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useCreateAuction } from "@/hooks/useAuctions";
 import { useSolmatesProgram } from "@/lib/anchor/hooks";
-import { createAuction as onChainCreateAuction } from "@/lib/anchor/program";
+import { createAuction as onChainCreateAuction, fetchUserProfile } from "@/lib/anchor/program";
 import { parseUsdc } from "@/lib/constants";
 
 interface CreateAuctionModalProps {
@@ -64,17 +64,21 @@ export function CreateAuctionModal({ isOpen, onClose, onSuccess }: CreateAuction
     setError("");
     
     try {
-      // Generate auction ID (use timestamp for uniqueness)
-      const auctionId = Math.floor(Date.now() / 1000);
       const endTime = new Date(Date.now() + durationHours * 3600000);
       
       let txSignature: string | undefined;
+      let auctionId: number;
       
       // Call on-chain first if program is available
       if (program) {
         try {
           toast.loading("Creating on-chain auction...", { id: "create-auction" });
           const durationSeconds = durationHours * 3600;
+          
+          // Fetch current profile to get auction_count BEFORE creating
+          const profileBefore = await fetchUserProfile(program, publicKey);
+          auctionId = profileBefore ? profileBefore.auctionCount.toNumber() : 0;
+          
           txSignature = await onChainCreateAuction(
             program,
             publicKey,
@@ -85,8 +89,12 @@ export function CreateAuctionModal({ isOpen, onClose, onSuccess }: CreateAuction
         } catch (err: any) {
           console.error("On-chain auction creation failed:", err);
           toast.dismiss("create-auction");
-          // Continue with Supabase-only for demo
+          // Fallback to timestamp-based ID for demo
+          auctionId = Math.floor(Date.now() / 1000);
         }
+      } else {
+        // No program available, use timestamp as fallback
+        auctionId = Math.floor(Date.now() / 1000);
       }
       
       // Create in Supabase

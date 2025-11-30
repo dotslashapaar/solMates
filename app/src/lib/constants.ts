@@ -1,4 +1,5 @@
 import { Connection, PublicKey, clusterApiUrl } from "@solana/web3.js";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
 // Program ID deployed on devnet
 export const PROGRAM_ID = new PublicKey(
@@ -9,6 +10,11 @@ export const PROGRAM_ID = new PublicKey(
 // In production, use: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 export const USDC_MINT = new PublicKey(
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+);
+
+// Platform treasury for 1% fees
+export const TREASURY = new PublicKey(
+  "2CquYcQoBGv8MiiMfP3Lgut79oLCtDbCTrB6fnQm1WeG"
 );
 
 // RPC endpoint from environment variable, with fallback to devnet
@@ -75,6 +81,20 @@ export function parseUsdc(amount: string | number): number {
 // Shorten address
 export function shortenAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
+// Get USDC balance for a wallet
+export async function getUsdcBalance(
+  connection: Connection,
+  wallet: PublicKey
+): Promise<number> {
+  try {
+    const ata = getAssociatedTokenAddressSync(USDC_MINT, wallet);
+    const account = await connection.getTokenAccountBalance(ata);
+    return parseInt(account.value.amount);
+  } catch {
+    return 0;
+  }
 }
 
 // Gender-based avatar URL using DiceBear avataaars with gender-appropriate options

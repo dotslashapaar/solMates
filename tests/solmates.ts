@@ -45,6 +45,9 @@ describe("solmates", () => {
   const TEN_USDC = 10_000_000;
   const HUNDRED_USDC = 100_000_000;
 
+  // Treasury address for platform fees
+  const TREASURY = new PublicKey("2CquYcQoBGv8MiiMfP3Lgut79oLCtDbCTrB6fnQm1WeG");
+
   before(async () => {
     // Generate keypairs
     mintAuthority = Keypair.generate();
@@ -326,6 +329,8 @@ describe("solmates", () => {
         await getAccount(provider.connection, bobTokenAccount)
       ).amount;
 
+      const treasuryTokenAccount = getAssociatedTokenAddressSync(usdcMint, TREASURY);
+
       const tx = await program.methods
         .acceptDm()
         .accountsStrict({
@@ -335,6 +340,8 @@ describe("solmates", () => {
           escrow: escrowPda,
           escrowVault: escrowVault,
           recipientTokenAccount: bobTokenAccount,
+          treasury: TREASURY,
+          treasuryTokenAccount: treasuryTokenAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
@@ -344,11 +351,12 @@ describe("solmates", () => {
 
       console.log("Accept DM tx:", tx);
 
-      // Verify bob received USDC
+      // Verify bob received USDC (minus 1% fee)
       const finalBalance = (
         await getAccount(provider.connection, bobTokenAccount)
       ).amount;
-      expect(Number(finalBalance) - Number(initialBalance)).to.equal(TEN_USDC);
+      const expectedAmount = TEN_USDC - Math.floor(TEN_USDC / 100); // 99% after 1% fee
+      expect(Number(finalBalance) - Number(initialBalance)).to.equal(expectedAmount);
 
       // Verify escrow vault is empty (tokens transferred out)
       const vaultBalance = await getAccount(provider.connection, escrowVault);
@@ -672,6 +680,8 @@ describe("solmates", () => {
       const bountyAmount = (await program.account.bountyVault.fetch(bountyPda))
         .rewardAmount.toNumber();
 
+      const treasuryTokenAccount = getAssociatedTokenAddressSync(usdcMint, TREASURY);
+
       const tx = await program.methods
         .payoutReferral()
         .accountsStrict({
@@ -681,6 +691,8 @@ describe("solmates", () => {
           bounty: bountyPda,
           bountyVault: bountyVault,
           matchmakerTokenAccount: aliceTokenAccount,
+          treasury: TREASURY,
+          treasuryTokenAccount: treasuryTokenAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
@@ -690,11 +702,12 @@ describe("solmates", () => {
 
       console.log("Payout bounty tx:", tx);
 
-      // Verify alice received the bounty
+      // Verify alice received the bounty (minus 1% fee)
       const finalAliceBalance = (
         await getAccount(provider.connection, aliceTokenAccount)
       ).amount;
-      expect(Number(finalAliceBalance) - Number(initialAliceBalance)).to.equal(bountyAmount);
+      const expectedAmount = bountyAmount - Math.floor(bountyAmount / 100); // 99% after 1% fee
+      expect(Number(finalAliceBalance) - Number(initialAliceBalance)).to.equal(expectedAmount);
 
       // Verify bounty vault is empty (tokens transferred out)
       const vaultBalance = await getAccount(provider.connection, bountyVault);

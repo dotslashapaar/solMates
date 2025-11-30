@@ -25,6 +25,7 @@ pub struct EscrowAccepted {
     pub sender: Pubkey,
     pub recipient: Pubkey,
     pub amount: u64,
+    pub fee: u64,
 }
 
 #[event]
@@ -52,11 +53,18 @@ pub struct BidPlaced {
 }
 
 #[event]
+pub struct AuctionCancelled {
+    pub host: Pubkey,
+    pub auction_id: u64,
+}
+
+#[event]
 pub struct AuctionClaimed {
     pub auction_id: u64,
     pub host: Pubkey,
     pub winner: Pubkey,
     pub amount: u64,
+    pub fee: u64,
 }
 
 #[event]
@@ -76,6 +84,7 @@ pub struct BountyPaid {
     pub issuer: Pubkey,
     pub matchmaker: Pubkey,
     pub amount: u64,
+    pub fee: u64,
 }
 
 #[event]

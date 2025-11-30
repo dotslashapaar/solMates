@@ -5,6 +5,9 @@ pub enum SolmatesError {
     #[msg("Bid amount must be higher than current highest bid")]
     BidTooLow,
 
+    #[msg("Bid increment too small - must be at least 5% higher")]
+    BidIncrementTooSmall,
+
     #[msg("Auction has ended")]
     AuctionEnded,
 
@@ -13,6 +16,9 @@ pub enum SolmatesError {
 
     #[msg("No bids were placed on this auction")]
     NoBidsPlaced,
+
+    #[msg("Cannot cancel auction with existing bids")]
+    AuctionHasBids,
 
     #[msg("Escrow has not expired yet")]
     EscrowNotExpired,
@@ -40,4 +46,7 @@ pub enum SolmatesError {
 
     #[msg("Invalid previous bidder account")]
     InvalidPreviousBidder,
+
+    #[msg("Invalid treasury account")]
+    InvalidTreasury,
 }

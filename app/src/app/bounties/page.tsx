@@ -3,21 +3,27 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
+import toast from "react-hot-toast";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
-import { Users, Gift, Target, Plus, Check, Loader2 } from "lucide-react";
-import { useBounties, useCreateBounty, useSubmitToBounty } from "@/hooks/useBounties";
+import { Users, Gift, Target, Plus, Check, Loader2, X, Eye } from "lucide-react";
+import { useBounties, useCreateBounty, useSubmitToBounty, useBountySubmissions, useAcceptSubmission } from "@/hooks/useBounties";
 import { useProfile, useProfiles } from "@/hooks/useProfiles";
 import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
-import type { Bounty, Profile } from "@/lib/supabase";
+import { useSolmatesProgram } from "@/lib/anchor/hooks";
+import { createBounty as onChainCreateBounty, cancelBounty as onChainCancelBounty, payoutReferral as onChainPayoutReferral } from "@/lib/anchor/program";
+import type { Bounty, Profile, BountySubmission } from "@/lib/supabase";
 
 export default function BountiesPage() {
   const { connected, publicKey } = useWallet();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [viewSubmissionsBounty, setViewSubmissionsBounty] = useState<Bounty | null>(null);
   const [selectedMatchProfile, setSelectedMatchProfile] = useState<string>("");
   const [submissionNote, setSubmissionNote] = useState("");
+  const [cancellingBounty, setCancellingBounty] = useState<string | null>(null);
+  const [acceptingSubmission, setAcceptingSubmission] = useState<string | null>(null);
   const [newBounty, setNewBounty] = useState({
     description: "",
     reward: "",
@@ -27,7 +33,33 @@ export default function BountiesPage() {
   const { bounties, loading, error, refetch } = useBounties({ status: "open" });
   const { createBounty, loading: creating } = useCreateBounty();
   const { submitMatch, loading: submitting } = useSubmitToBounty();
+  const { acceptSubmission } = useAcceptSubmission();
   const { profiles } = useProfiles();
+  const program = useSolmatesProgram();
+
+  const handleCancelBounty = async (bounty: Bounty) => {
+    if (!publicKey || !program) return;
+    
+    setCancellingBounty(bounty.id);
+    try {
+      toast.loading("Cancelling bounty...", { id: "cancel-bounty" });
+      const txSignature = await onChainCancelBounty(program, publicKey);
+      toast.success(`Bounty cancelled! ${formatUsdc(bounty.reward_amount)} USDC refunded.`, { id: "cancel-bounty" });
+      
+      // Update bounty status in Supabase
+      const supabase = (await import("@/lib/supabase")).getSupabase();
+      await supabase
+        .from("bounties")
+        .update({ status: "cancelled", tx_signature: txSignature })
+        .eq("id", bounty.id);
+      
+      refetch();
+    } catch (err: any) {
+      console.error("Error cancelling bounty:", err);
+      toast.error("Failed to cancel bounty", { id: "cancel-bounty" });
+    }
+    setCancellingBounty(null);
+  };
 
   const handleSubmitMatch = (bounty: Bounty) => {
     setSelectedBounty(bounty);
@@ -46,10 +78,41 @@ export default function BountiesPage() {
     );
     
     if (success) {
+      toast.success("Match submitted!");
       setSelectedBounty(null);
       setSelectedMatchProfile("");
       setSubmissionNote("");
     }
+  };
+
+  const handleAcceptSubmission = async (submission: BountySubmission, bounty: Bounty) => {
+    if (!publicKey || !program) return;
+    
+    setAcceptingSubmission(submission.id);
+    try {
+      toast.loading("Accepting match and paying reward...", { id: "accept-submission" });
+      
+      // Call on-chain payout
+      const matchmakerPubkey = new (await import("@solana/web3.js")).PublicKey(submission.matchmaker_wallet);
+      const txSignature = await onChainPayoutReferral(program, publicKey, matchmakerPubkey);
+      
+      // Update Supabase
+      await acceptSubmission(
+        submission.id,
+        bounty.id,
+        submission.matchmaker_wallet,
+        submission.suggested_wallet,
+        txSignature
+      );
+      
+      toast.success(`Match accepted! ${formatUsdc(bounty.reward_amount)} USDC sent to matchmaker (1% fee to platform)`, { id: "accept-submission" });
+      setViewSubmissionsBounty(null);
+      refetch();
+    } catch (err: any) {
+      console.error("Error accepting submission:", err);
+      toast.error("Failed to accept submission", { id: "accept-submission" });
+    }
+    setAcceptingSubmission(null);
   };
 
   const handleCreateBounty = async () => {
@@ -60,15 +123,33 @@ export default function BountiesPage() {
       .map((p) => p.trim())
       .filter(Boolean);
 
-    // TODO: Call on-chain createBounty first, then record in Supabase
+    const rewardAmount = parseUsdc(newBounty.reward);
+    let txSignature: string | undefined;
+
+    // Call on-chain createBounty first
+    if (program) {
+      try {
+        toast.loading("Creating on-chain bounty...", { id: "create-bounty" });
+        txSignature = await onChainCreateBounty(program, publicKey, rewardAmount);
+        toast.success("On-chain bounty created!", { id: "create-bounty" });
+      } catch (err: any) {
+        console.error("On-chain bounty creation failed:", err);
+        toast.error("On-chain creation failed, saving to database only", { id: "create-bounty" });
+        // Continue with Supabase-only for demo
+      }
+    }
+
+    // Record in Supabase
     const result = await createBounty({
       issuer_wallet: publicKey.toBase58(),
       description: newBounty.description,
       preferences,
-      reward_amount: parseUsdc(newBounty.reward),
+      reward_amount: rewardAmount,
+      tx_signature: txSignature,
     });
     
     if (result) {
+      toast.success("Bounty created successfully!");
       setShowCreateForm(false);
       setNewBounty({ description: "", reward: "", preferences: "" });
       refetch();
@@ -188,7 +269,11 @@ export default function BountiesPage() {
                 key={bounty.id}
                 bounty={bounty}
                 onSubmitMatch={() => handleSubmitMatch(bounty)}
+                onCancel={() => handleCancelBounty(bounty)}
+                onViewSubmissions={() => setViewSubmissionsBounty(bounty)}
                 connected={connected}
+                cancelling={cancellingBounty === bounty.id}
+                isIssuer={bounty.issuer_wallet === publicKey?.toBase58()}
               />
             ))}
           </div>
@@ -338,6 +423,17 @@ export default function BountiesPage() {
             </div>
           </div>
         )}
+
+        {/* View Submissions Modal */}
+        {viewSubmissionsBounty && (
+          <ViewSubmissionsModal
+            bounty={viewSubmissionsBounty}
+            profiles={profiles}
+            onClose={() => setViewSubmissionsBounty(null)}
+            onAccept={handleAcceptSubmission}
+            acceptingSubmission={acceptingSubmission}
+          />
+        )}
       </div>
     </div>
   );
@@ -346,11 +442,19 @@ export default function BountiesPage() {
 function BountyCard({
   bounty,
   onSubmitMatch,
+  onCancel,
+  onViewSubmissions,
   connected,
+  cancelling,
+  isIssuer,
 }: {
   bounty: Bounty;
   onSubmitMatch: () => void;
+  onCancel: () => void;
+  onViewSubmissions: () => void;
   connected: boolean;
+  cancelling: boolean;
+  isIssuer: boolean;
 }) {
   const { profile } = useProfile(bounty.issuer_wallet);
   const displayName = profile?.name || shortenAddress(bounty.issuer_wallet);
@@ -408,10 +512,34 @@ function BountyCard({
             </div>
 
             {connected ? (
-              <Button className="w-full" onClick={onSubmitMatch}>
-                <Check className="w-4 h-4 mr-2" />
-                Submit a Match
-              </Button>
+              isIssuer ? (
+                <div className="space-y-2">
+                  <Button 
+                    className="w-full bg-white/[0.04] hover:bg-white/[0.08] text-white border border-white/[0.06]" 
+                    onClick={onViewSubmissions}
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    View Submissions
+                  </Button>
+                  <Button 
+                    className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20" 
+                    onClick={onCancel}
+                    disabled={cancelling}
+                  >
+                    {cancelling ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <X className="w-4 h-4 mr-2" />
+                    )}
+                    Cancel Bounty
+                  </Button>
+                </div>
+              ) : (
+                <Button className="w-full" onClick={onSubmitMatch}>
+                  <Check className="w-4 h-4 mr-2" />
+                  Submit a Match
+                </Button>
+              )
             ) : (
               <p className="text-center text-xs text-zinc-600 py-2">
                 Connect wallet to submit
@@ -421,5 +549,120 @@ function BountyCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ViewSubmissionsModal({
+  bounty,
+  profiles,
+  onClose,
+  onAccept,
+  acceptingSubmission,
+}: {
+  bounty: Bounty;
+  profiles: Profile[];
+  onClose: () => void;
+  onAccept: (submission: BountySubmission, bounty: Bounty) => void;
+  acceptingSubmission: string | null;
+}) {
+  const { submissions, loading } = useBountySubmissions(bounty.id);
+  
+  const getProfileForWallet = (wallet: string) => 
+    profiles.find(p => p.wallet_address === wallet);
+  
+  return (
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-zinc-900 border border-white/[0.06] rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">
+              Submissions for Your Bounty
+            </h3>
+            <button onClick={onClose} className="text-zinc-500 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] mb-4">
+            <p className="text-xs text-zinc-500 mb-1">Your bounty:</p>
+            <p className="text-sm text-zinc-300">{bounty.description}</p>
+            <p className="text-xs text-rose-400 mt-2">Reward: ${formatUsdc(bounty.reward_amount)} USDC</p>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 text-rose-500 animate-spin" />
+            </div>
+          ) : submissions.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="w-10 h-10 text-zinc-700 mx-auto mb-2" />
+              <p className="text-zinc-500 text-sm">No submissions yet</p>
+              <p className="text-zinc-600 text-xs mt-1">Matchmakers will submit profiles here</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {submissions.filter(s => s.status === "pending").map((submission) => {
+                const suggestedProfile = getProfileForWallet(submission.suggested_wallet);
+                const matchmakerProfile = getProfileForWallet(submission.matchmaker_wallet);
+                
+                return (
+                  <div key={submission.id} className="p-4 bg-white/[0.03] rounded-lg border border-white/[0.06]">
+                    <div className="flex items-start gap-3">
+                      <img
+                        src={suggestedProfile?.photos?.[0] || getGenderAvatar(submission.suggested_wallet, suggestedProfile?.gender)}
+                        alt="Suggested match"
+                        className="w-14 h-14 rounded-lg object-cover"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-white">
+                          {suggestedProfile?.name || shortenAddress(submission.suggested_wallet)}
+                          {suggestedProfile?.age && <span className="text-zinc-400">, {suggestedProfile.age}</span>}
+                        </h4>
+                        {suggestedProfile?.location && (
+                          <p className="text-xs text-zinc-500">{suggestedProfile.location}</p>
+                        )}
+                        {suggestedProfile?.bio && (
+                          <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{suggestedProfile.bio}</p>
+                        )}
+                        {submission.note && (
+                          <div className="mt-2 p-2 bg-white/[0.03] rounded border border-white/[0.06]">
+                            <p className="text-[10px] text-zinc-600">Matchmaker's note:</p>
+                            <p className="text-xs text-zinc-400 italic">"{submission.note}"</p>
+                          </div>
+                        )}
+                        <p className="text-[10px] text-zinc-600 mt-2">
+                          Submitted by: {matchmakerProfile?.name || shortenAddress(submission.matchmaker_wallet)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => onAccept(submission, bounty)}
+                        disabled={acceptingSubmission === submission.id}
+                      >
+                        {acceptingSubmission === submission.id ? (
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5 mr-1.5" />
+                        )}
+                        Accept & Pay Reward
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

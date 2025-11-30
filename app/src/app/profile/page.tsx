@@ -21,9 +21,13 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  Quote,
+  Sparkles,
 } from "lucide-react";
 import { useProfile, useUpdateProfile, useDeleteProfile } from "@/hooks/useProfiles";
 import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
+import { useSolmatesProgram } from "@/lib/anchor/hooks";
+import { updateProfile as onChainUpdateProfile } from "@/lib/anchor/program";
 import type { GenderType } from "@/lib/supabase/types";
 
 const GENDER_OPTIONS: { value: GenderType; label: string }[] = [
@@ -42,6 +46,7 @@ export default function ProfilePage() {
   const { profile, loading, error, refetch } = useProfile();
   const { updateProfile, loading: updating, error: updateError } = useUpdateProfile();
   const { deleteProfile, loading: deleting, error: deleteError } = useDeleteProfile();
+  const program = useSolmatesProgram();
   
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -89,9 +94,21 @@ export default function ProfilePage() {
   };
 
   const handleSave = async () => {
-    if (!profile) return;
+    if (!profile || !publicKey) return;
     
     setSaveError("");
+    
+    const dmPriceLamports = parseUsdc(formData.dmPrice) || parseUsdc(10);
+    
+    // Sync DM price on-chain if program is available
+    if (program) {
+      try {
+        await onChainUpdateProfile(program, publicKey, dmPriceLamports);
+      } catch (err: any) {
+        console.error("On-chain profile update failed:", err);
+        // Continue with Supabase update even if on-chain fails
+      }
+    }
     
     const success = await updateProfile(profile.wallet_address, {
       name: formData.name.trim(),
@@ -103,7 +120,7 @@ export default function ProfilePage() {
       occupation: formData.occupation.trim() || null,
       interests: interests,
       // Convert USDC to lamports for database storage
-      dm_price: parseUsdc(formData.dmPrice) || parseUsdc(10),
+      dm_price: dmPriceLamports,
     });
 
     if (success) {
@@ -247,21 +264,23 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <Card className="rounded-xl bg-zinc-900 border-white/[0.06]">
-            <CardContent className="p-6">
-              {/* Profile Photo */}
-              <div className="flex justify-center mb-6">
+          <Card className="rounded-2xl bg-zinc-900/80 backdrop-blur-xl border-white/[0.08] shadow-2xl shadow-black/20">
+            <CardContent className="p-8">
+              {/* Profile Photo with Gradient Glow */}
+              <div className="flex justify-center mb-8">
                 <div className="relative">
+                  {/* Gradient glow effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-rose-500 via-pink-500 to-orange-500 rounded-full blur-xl opacity-40 scale-110" />
                   <img
                     src={
                       profile.photos?.[0] ||
                       getGenderAvatar(profile.wallet_address, profile.gender)
                     }
                     alt={profile.name}
-                    className="w-24 h-24 rounded-full bg-zinc-800 ring-2 ring-rose-500/20"
+                    className="relative w-32 h-32 rounded-full bg-zinc-800 ring-4 ring-white/10 shadow-xl"
                   />
                   {profile.is_active && (
-                    <div className="absolute bottom-1 right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-zinc-900" />
+                    <div className="absolute bottom-2 right-2 w-5 h-5 bg-emerald-500 rounded-full border-3 border-zinc-900 shadow-lg shadow-emerald-500/50" />
                   )}
                 </div>
               </div>
@@ -433,26 +452,43 @@ export default function ProfilePage() {
                 </div>
               ) : (
                 // View Mode
-                <div className="space-y-4">
+                <div className="space-y-6">
+                  {/* Name, Age & Gender */}
                   <div className="text-center">
-                    <h2 className="text-xl font-semibold text-white mb-1">
-                      {profile.name}, {profile.age}
+                    <h2 className="text-2xl font-bold text-white mb-2">
+                      {profile.name}
+                      <span className="text-zinc-400 font-normal">, {profile.age}</span>
                     </h2>
                     {profile.gender && (
-                      <p className="text-zinc-400 text-sm mb-1">{formatGender(profile.gender)}</p>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-rose-500/10 to-pink-500/10 border border-rose-500/20 rounded-full text-sm text-rose-300">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        {formatGender(profile.gender)}
+                      </span>
                     )}
-                    <p className="text-zinc-500 text-sm">{profile.bio}</p>
                   </div>
 
-                  {/* Gender & Looking For */}
+                  {/* Bio with Quote Style */}
+                  {profile.bio && (
+                    <div className="relative px-6 py-4 bg-white/[0.02] rounded-xl border border-white/[0.04]">
+                      <Quote className="absolute top-3 left-3 w-5 h-5 text-rose-500/30" />
+                      <p className="text-zinc-300 text-sm leading-relaxed pl-4 italic">
+                        {profile.bio}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Looking For */}
                   {profile.looking_for && profile.looking_for.length > 0 && (
-                    <div className="pt-4 border-t border-white/[0.06]">
-                      <p className="text-xs text-zinc-500 mb-2">Interested in</p>
+                    <div className="pt-2">
+                      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <Heart className="w-3.5 h-3.5 text-pink-400" />
+                        Interested in
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         {profile.looking_for.map((g, index) => (
                           <span
                             key={index}
-                            className="px-2 py-1 bg-violet-500/10 border border-violet-500/20 rounded-md text-xs text-violet-400"
+                            className="px-3 py-1.5 bg-gradient-to-r from-violet-500/15 to-purple-500/15 border border-violet-500/25 rounded-lg text-sm text-violet-300 font-medium"
                           >
                             {formatGender(g)}
                           </span>
@@ -461,33 +497,53 @@ export default function ProfilePage() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/[0.06]">
+                  {/* Info Cards Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                     {profile.location && (
-                      <div className="flex items-center gap-2 text-sm text-zinc-400">
-                        <MapPin className="w-4 h-4 text-rose-400" />
-                        {profile.location}
+                      <div className="flex items-center gap-3 p-3 bg-white/[0.03] rounded-xl border border-white/[0.06] hover:border-white/[0.1] transition-colors">
+                        <div className="w-10 h-10 rounded-lg bg-sky-500/15 flex items-center justify-center">
+                          <MapPin className="w-5 h-5 text-sky-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-zinc-500">Location</p>
+                          <p className="text-sm text-white font-medium">{profile.location}</p>
+                        </div>
                       </div>
                     )}
                     {profile.occupation && (
-                      <div className="flex items-center gap-2 text-sm text-zinc-400">
-                        <Briefcase className="w-4 h-4 text-rose-400" />
-                        {profile.occupation}
+                      <div className="flex items-center gap-3 p-3 bg-white/[0.03] rounded-xl border border-white/[0.06] hover:border-white/[0.1] transition-colors">
+                        <div className="w-10 h-10 rounded-lg bg-amber-500/15 flex items-center justify-center">
+                          <Briefcase className="w-5 h-5 text-amber-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-zinc-500">Occupation</p>
+                          <p className="text-sm text-white font-medium">{profile.occupation}</p>
+                        </div>
                       </div>
                     )}
-                    <div className="flex items-center gap-2 text-sm text-zinc-400 col-span-2">
-                      <DollarSign className="w-4 h-4 text-rose-400" />
-                      DM Price: {formatUsdc(profile.dm_price)} USDC
+                    <div className="flex items-center gap-3 p-3 bg-white/[0.03] rounded-xl border border-white/[0.06] hover:border-white/[0.1] transition-colors sm:col-span-2">
+                      <div className="w-10 h-10 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                        <DollarSign className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-zinc-500">DM Price</p>
+                        <p className="text-sm text-white font-medium">{formatUsdc(profile.dm_price)} <span className="text-emerald-400">USDC</span></p>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Interests with Gradient Tags */}
                   {profile.interests && profile.interests.length > 0 && (
-                    <div className="pt-4 border-t border-white/[0.06]">
-                      <p className="text-xs text-zinc-500 mb-2">Interests</p>
+                    <div className="pt-2">
+                      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+                        Interests
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         {profile.interests.map((interest, index) => (
                           <span
                             key={index}
-                            className="px-2 py-1 bg-rose-500/10 border border-rose-500/20 rounded-md text-xs text-rose-400"
+                            className="px-3 py-1.5 bg-gradient-to-r from-rose-500/15 via-pink-500/15 to-orange-500/15 border border-rose-500/25 rounded-lg text-sm text-rose-300 font-medium hover:border-rose-500/40 transition-colors cursor-default"
                           >
                             {interest}
                           </span>

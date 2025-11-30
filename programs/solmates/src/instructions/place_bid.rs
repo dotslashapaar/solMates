@@ -4,8 +4,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use crate::errors::SolmatesError;
 use crate::events::BidPlaced;
 use crate::states::DateAuction;
-use crate::SNIPE_EXTENSION;
-use crate::SNIPE_THRESHOLD;
+use crate::{SNIPE_EXTENSION, SNIPE_THRESHOLD, MAX_SNIPE_EXTENSIONS, MIN_BID_INCREMENT_BPS};
 
 #[derive(Accounts)]
 pub struct PlaceBid<'info> {
@@ -65,6 +64,13 @@ pub fn handler(ctx: Context<PlaceBid>, bid_amount: u64) -> Result<()> {
     // Check bid is higher than current
     require!(bid_amount > auction.highest_bid, SolmatesError::BidTooLow);
 
+    // Check minimum bid increment (5% higher than current bid)
+    let min_increment = auction.highest_bid
+        .checked_mul(MIN_BID_INCREMENT_BPS).unwrap()
+        .checked_div(10000).unwrap();
+    let min_bid = auction.highest_bid.checked_add(min_increment).unwrap();
+    require!(bid_amount >= min_bid, SolmatesError::BidIncrementTooSmall);
+
     // Copy values before CPI to avoid borrow conflicts
     let host_key = auction.host;
     let auction_id = auction.auction_id;
@@ -73,6 +79,8 @@ pub fn handler(ctx: Context<PlaceBid>, bid_amount: u64) -> Result<()> {
     let previous_bid_amount = auction.highest_bid;
     let previous_bidder = auction.highest_bidder;
     let is_first_bid = previous_bidder == host_key;
+    let original_end_time = auction.end_time;
+    let total_extended = auction.total_extended;
 
     let seeds = &[
         b"auction",
@@ -112,9 +120,13 @@ pub fn handler(ctx: Context<PlaceBid>, bid_amount: u64) -> Result<()> {
     auction.highest_bidder = ctx.accounts.bidder.key();
     auction.highest_bid = bid_amount;
 
-    // Step 4: Snipe protection - extend if within last 5 minutes
-    if auction.end_time.checked_sub(current_time).unwrap_or(0) < SNIPE_THRESHOLD {
-        auction.end_time = auction.end_time.checked_add(SNIPE_EXTENSION).unwrap();
+    // Step 4: Snipe protection - extend if within last 5 minutes (with cap at 1 hour total)
+    let time_remaining = original_end_time.checked_sub(current_time).unwrap_or(0);
+    if time_remaining < SNIPE_THRESHOLD && total_extended < MAX_SNIPE_EXTENSIONS {
+        let remaining_extension = MAX_SNIPE_EXTENSIONS.checked_sub(total_extended).unwrap();
+        let extension = SNIPE_EXTENSION.min(remaining_extension);
+        auction.end_time = original_end_time.checked_add(extension).unwrap();
+        auction.total_extended = total_extended.checked_add(extension).unwrap();
     }
 
     emit!(BidPlaced {

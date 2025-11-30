@@ -19,8 +19,10 @@ import { useMessages, useUpdateMessageStatus } from "@/hooks/useMessages";
 import { useProfiles } from "@/hooks/useProfiles";
 import type { Message, Profile } from "@/lib/supabase";
 import { useSolmatesProgram } from "@/lib/anchor/hooks";
-import { acceptDm, refundDm } from "@/lib/anchor/program";
-import { getGenderAvatar } from "@/lib/constants";
+import { acceptDm, declineDm, refundDm } from "@/lib/anchor/program";
+import { getGenderAvatar, formatUsdc } from "@/lib/constants";
+
+const ESCROW_DURATION_MS = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
 
 function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -92,9 +94,9 @@ export default function MessagesPage() {
     
     setProcessingId(message.id);
     try {
-      // Call on-chain refundDm instruction (sender gets refund)
+      // Call on-chain declineDm instruction (recipient signs to decline)
       const senderPubkey = new PublicKey(message.sender_wallet);
-      const txSignature = await refundDm(program, senderPubkey, publicKey);
+      const txSignature = await declineDm(program, senderPubkey, publicKey);
       
       // Update Supabase status with tx signature
       const success = await updateStatus(message.id, "declined", txSignature);
@@ -108,6 +110,36 @@ export default function MessagesPage() {
       refetch();
     }
     setProcessingId(null);
+  };
+
+  const handleClaimRefund = async (message: Message) => {
+    if (!publicKey || !program) return;
+    
+    setProcessingId(message.id);
+    try {
+      // Call on-chain refundDm instruction (sender claims expired escrow)
+      const recipientPubkey = new PublicKey(message.recipient_wallet);
+      const txSignature = await refundDm(program, publicKey, recipientPubkey);
+      
+      // Update Supabase status with tx signature
+      const success = await updateStatus(message.id, "refunded", txSignature);
+      if (success) {
+        refetch();
+      }
+    } catch (err: any) {
+      console.error("Error claiming refund:", err);
+      // Still update Supabase if on-chain fails (for demo purposes)
+      await updateStatus(message.id, "refunded");
+      refetch();
+    }
+    setProcessingId(null);
+  };
+
+  // Check if message escrow has expired (48 hours)
+  const isExpired = (message: Message): boolean => {
+    const createdAt = new Date(message.created_at).getTime();
+    const now = Date.now();
+    return now - createdAt > ESCROW_DURATION_MS;
   };
   
   // Get profile image or generate avatar based on gender
@@ -246,7 +278,7 @@ export default function MessagesPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/10 rounded-md border border-rose-500/20">
                               <DollarSign className="w-3.5 h-3.5 text-rose-400" />
-                              <span className="text-sm font-medium text-rose-400">{msg.escrow_amount} USDC</span>
+                              <span className="text-sm font-medium text-rose-400">{formatUsdc(msg.escrow_amount)} USDC</span>
                             </div>
                             {msg.escrow_status === "pending" ? (
                               <div className="flex gap-2">
@@ -330,26 +362,41 @@ export default function MessagesPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/10 rounded-md border border-rose-500/20">
                             <DollarSign className="w-3.5 h-3.5 text-rose-400" />
-                            <span className="text-sm font-medium text-rose-400">{msg.escrow_amount} USDC</span>
+                            <span className="text-sm font-medium text-rose-400">{formatUsdc(msg.escrow_amount)} USDC</span>
                           </div>
-                          <div
-                            className={`px-2.5 py-1 rounded-md text-xs flex items-center gap-1 font-medium ${
-                              msg.escrow_status === "accepted"
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : msg.escrow_status === "declined"
-                                ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                            }`}
-                          >
-                            {msg.escrow_status === "accepted" ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : msg.escrow_status === "declined" ? (
-                              <X className="w-3.5 h-3.5" />
-                            ) : (
-                              <Clock className="w-3.5 h-3.5" />
-                            )}
-                            {msg.escrow_status.charAt(0).toUpperCase() + msg.escrow_status.slice(1)}
-                          </div>
+                          {msg.escrow_status === "pending" && isExpired(msg) ? (
+                            <button
+                              onClick={() => handleClaimRefund(msg)}
+                              disabled={processingId === msg.id}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all duration-200 flex items-center gap-1 text-xs font-medium disabled:opacity-50"
+                            >
+                              {processingId === msg.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <DollarSign className="w-3.5 h-3.5" />
+                              )}
+                              Claim Refund
+                            </button>
+                          ) : (
+                            <div
+                              className={`px-2.5 py-1 rounded-md text-xs flex items-center gap-1 font-medium ${
+                                msg.escrow_status === "accepted"
+                                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                  : msg.escrow_status === "declined" || msg.escrow_status === "refunded"
+                                  ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                                  : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                              }`}
+                            >
+                              {msg.escrow_status === "accepted" ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : msg.escrow_status === "declined" || msg.escrow_status === "refunded" ? (
+                                <X className="w-3.5 h-3.5" />
+                              ) : (
+                                <Clock className="w-3.5 h-3.5" />
+                              )}
+                              {msg.escrow_status.charAt(0).toUpperCase() + msg.escrow_status.slice(1)}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

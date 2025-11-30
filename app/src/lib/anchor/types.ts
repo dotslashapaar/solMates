@@ -28,6 +28,7 @@ export interface DateAuction {
   highestBidder: PublicKey;
   highestBid: BN;
   endTime: BN;
+  totalExtended: BN;
   bump: number;
 }
 

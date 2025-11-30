@@ -7,6 +7,7 @@ use anchor_spl::{
 use crate::errors::SolmatesError;
 use crate::events::EscrowAccepted;
 use crate::states::{EscrowStatus, MessageEscrow};
+use crate::{PLATFORM_FEE_BPS, TREASURY};
 
 #[derive(Accounts)]
 pub struct AcceptDm<'info> {
@@ -45,6 +46,21 @@ pub struct AcceptDm<'info> {
     )]
     pub recipient_token_account: Account<'info, TokenAccount>,
 
+    /// CHECK: Platform treasury for fees - validated against constant
+    #[account(
+        mut,
+        constraint = treasury.key() == TREASURY @ SolmatesError::InvalidTreasury
+    )]
+    pub treasury: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = recipient,
+        associated_token::mint = mint,
+        associated_token::authority = treasury
+    )]
+    pub treasury_token_account: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -66,6 +82,10 @@ pub fn handler(ctx: Context<AcceptDm>) -> Result<()> {
     let recipient = escrow.recipient;
     let bump = escrow.bump;
 
+    // Calculate platform fee (1%)
+    let fee = amount.checked_mul(PLATFORM_FEE_BPS).unwrap().checked_div(10000).unwrap();
+    let recipient_amount = amount.checked_sub(fee).unwrap();
+
     // Transfer USDC from escrow vault to recipient
     let sender_key = ctx.accounts.sender.key();
     let recipient_key = ctx.accounts.recipient.key();
@@ -77,6 +97,7 @@ pub fn handler(ctx: Context<AcceptDm>) -> Result<()> {
     ];
     let signer_seeds = &[&seeds[..]];
 
+    // Transfer to recipient
     let transfer_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
@@ -86,12 +107,27 @@ pub fn handler(ctx: Context<AcceptDm>) -> Result<()> {
         },
         signer_seeds,
     );
-    token::transfer(transfer_ctx, amount)?;
+    token::transfer(transfer_ctx, recipient_amount)?;
+
+    // Transfer fee to treasury
+    if fee > 0 {
+        let fee_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.escrow_vault.to_account_info(),
+                to: ctx.accounts.treasury_token_account.to_account_info(),
+                authority: ctx.accounts.escrow.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token::transfer(fee_ctx, fee)?;
+    }
 
     emit!(EscrowAccepted {
         sender,
         recipient,
-        amount,
+        amount: recipient_amount,
+        fee,
     });
 
     // Account will be closed, rent returned to sender

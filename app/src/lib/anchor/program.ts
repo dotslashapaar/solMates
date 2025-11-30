@@ -10,6 +10,7 @@ import type { AnchorWallet } from "@solana/wallet-adapter-react";
 import {
   connection as defaultConnection,
   USDC_MINT,
+  TREASURY,
   getProfilePda,
   getEscrowPda,
   getAuctionPda,
@@ -253,6 +254,7 @@ export async function acceptDm(
   const [escrowPda] = getEscrowPda(sender, recipient);
   const escrowVault = getAssociatedTokenAddressSync(mint, escrowPda, true);
   const recipientTokenAccount = getAssociatedTokenAddressSync(mint, recipient);
+  const treasuryTokenAccount = getAssociatedTokenAddressSync(mint, TREASURY);
 
   const tx = await (program.methods as any)
     .acceptDm()
@@ -263,6 +265,8 @@ export async function acceptDm(
       escrow: escrowPda,
       escrowVault,
       recipientTokenAccount,
+      treasury: TREASURY,
+      treasuryTokenAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
@@ -284,6 +288,32 @@ export async function refundDm(
 
   const tx = await (program.methods as any)
     .refundDm()
+    .accounts({
+      sender,
+      recipient,
+      mint,
+      escrow: escrowPda,
+      escrowVault,
+      senderTokenAccount,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .rpc();
+
+  return tx;
+}
+
+export async function declineDm(
+  program: SolmatesProgram,
+  sender: PublicKey,
+  recipient: PublicKey,
+  mint: PublicKey = USDC_MINT
+): Promise<string> {
+  const [escrowPda] = getEscrowPda(sender, recipient);
+  const escrowVault = getAssociatedTokenAddressSync(mint, escrowPda, true);
+  const senderTokenAccount = getAssociatedTokenAddressSync(mint, sender);
+
+  const tx = await (program.methods as any)
+    .declineDm()
     .accounts({
       sender,
       recipient,
@@ -378,6 +408,7 @@ export async function claimAuction(
   const [auctionPda] = getAuctionPda(host, auctionId);
   const auctionVault = getAssociatedTokenAddressSync(mint, auctionPda, true);
   const hostTokenAccount = getAssociatedTokenAddressSync(mint, host);
+  const treasuryTokenAccount = getAssociatedTokenAddressSync(mint, TREASURY);
 
   const tx = await (program.methods as any)
     .claimAuction()
@@ -387,9 +418,34 @@ export async function claimAuction(
       auction: auctionPda,
       auctionVault,
       hostTokenAccount,
+      treasury: TREASURY,
+      treasuryTokenAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  return tx;
+}
+
+export async function cancelAuction(
+  program: SolmatesProgram,
+  host: PublicKey,
+  auctionId: number,
+  mint: PublicKey = USDC_MINT
+): Promise<string> {
+  const [auctionPda] = getAuctionPda(host, auctionId);
+  const auctionVault = getAssociatedTokenAddressSync(mint, auctionPda, true);
+
+  const tx = await (program.methods as any)
+    .cancelAuction()
+    .accounts({
+      host,
+      mint,
+      auction: auctionPda,
+      auctionVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
     })
     .rpc();
 
@@ -461,6 +517,7 @@ export async function payoutReferral(
   const [bountyPda] = getBountyPda(issuer);
   const bountyVault = getAssociatedTokenAddressSync(mint, bountyPda, true);
   const matchmakerTokenAccount = getAssociatedTokenAddressSync(mint, matchmaker);
+  const treasuryTokenAccount = getAssociatedTokenAddressSync(mint, TREASURY);
 
   const tx = await (program.methods as any)
     .payoutReferral()
@@ -471,6 +528,8 @@ export async function payoutReferral(
       bounty: bountyPda,
       bountyVault,
       matchmakerTokenAccount,
+      treasury: TREASURY,
+      treasuryTokenAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,

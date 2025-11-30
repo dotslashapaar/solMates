@@ -16,6 +16,12 @@ declare_id!("4G4MoTN3yYJbCWSHQtKoKK645xrbw2C3yDiy52n8rSrb");
 pub const ESCROW_DURATION: i64 = 172800; // 48 hours in seconds (48 * 60 * 60)
 pub const SNIPE_THRESHOLD: i64 = 300; // 5 minutes in seconds (5 * 60)
 pub const SNIPE_EXTENSION: i64 = 300; // 5 minutes extension (5 * 60)
+pub const MAX_SNIPE_EXTENSIONS: i64 = 3600; // Maximum 1 hour total extension
+pub const PLATFORM_FEE_BPS: u64 = 100; // 1% = 100 basis points
+pub const MIN_BID_INCREMENT_BPS: u64 = 500; // 5% minimum bid increment
+
+// Platform treasury address for fee collection
+pub const TREASURY: Pubkey = pubkey!("2CquYcQoBGv8MiiMfP3Lgut79oLCtDbCTrB6fnQm1WeG");
 
 // ============================================================================
 // PROGRAM
@@ -59,6 +65,10 @@ pub mod solmates {
         instructions::accept_dm::handler(ctx)
     }
 
+    pub fn decline_dm(ctx: Context<DeclineDm>) -> Result<()> {
+        instructions::decline_dm::handler(ctx)
+    }
+
     pub fn refund_dm(ctx: Context<RefundDm>) -> Result<()> {
         instructions::refund_dm::handler(ctx)
     }
@@ -81,6 +91,10 @@ pub mod solmates {
 
     pub fn claim_auction(ctx: Context<ClaimAuction>) -> Result<()> {
         instructions::claim_auction::handler(ctx)
+    }
+
+    pub fn cancel_auction(ctx: Context<CancelAuction>) -> Result<()> {
+        instructions::cancel_auction::handler(ctx)
     }
 
     // ------------------------------------------------------------------------

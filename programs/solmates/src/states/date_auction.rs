@@ -9,5 +9,6 @@ pub struct DateAuction {
     pub highest_bidder: Pubkey,
     pub highest_bid: u64,
     pub end_time: i64,
+    pub total_extended: i64,  // Track total extension time for snipe protection cap
     pub bump: u8,
 }

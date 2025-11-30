@@ -7,6 +7,7 @@ use anchor_spl::{
 use crate::errors::SolmatesError;
 use crate::events::AuctionClaimed;
 use crate::states::DateAuction;
+use crate::{PLATFORM_FEE_BPS, TREASURY};
 
 #[derive(Accounts)]
 pub struct ClaimAuction<'info> {
@@ -40,6 +41,21 @@ pub struct ClaimAuction<'info> {
     )]
     pub host_token_account: Account<'info, TokenAccount>,
 
+    /// CHECK: Platform treasury for fees - validated against constant
+    #[account(
+        mut,
+        constraint = treasury.key() == TREASURY @ SolmatesError::InvalidTreasury
+    )]
+    pub treasury: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = host,
+        associated_token::mint = mint,
+        associated_token::authority = treasury
+    )]
+    pub treasury_token_account: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -61,6 +77,10 @@ pub fn handler(ctx: Context<ClaimAuction>) -> Result<()> {
         SolmatesError::NoBidsPlaced
     );
 
+    // Calculate platform fee (1%)
+    let fee = auction.highest_bid.checked_mul(PLATFORM_FEE_BPS).unwrap().checked_div(10000).unwrap();
+    let host_amount = auction.highest_bid.checked_sub(fee).unwrap();
+
     // Transfer USDC from auction vault to host
     let host_key = auction.host;
     let auction_id_bytes = auction.auction_id.to_le_bytes();
@@ -81,13 +101,28 @@ pub fn handler(ctx: Context<ClaimAuction>) -> Result<()> {
         },
         signer_seeds,
     );
-    token::transfer(transfer_ctx, auction.highest_bid)?;
+    token::transfer(transfer_ctx, host_amount)?;
+
+    // Transfer fee to treasury
+    if fee > 0 {
+        let fee_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.auction_vault.to_account_info(),
+                to: ctx.accounts.treasury_token_account.to_account_info(),
+                authority: ctx.accounts.auction.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token::transfer(fee_ctx, fee)?;
+    }
 
     emit!(AuctionClaimed {
         auction_id: auction.auction_id,
         host: auction.host,
         winner: auction.highest_bidder,
-        amount: auction.highest_bid,
+        amount: host_amount,
+        fee,
     });
 
     // Account will be closed, rent returned to host

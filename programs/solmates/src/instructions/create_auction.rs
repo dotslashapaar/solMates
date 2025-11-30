@@ -58,6 +58,7 @@ pub fn handler(ctx: Context<CreateAuction>, start_price: u64, duration_secs: i64
         .unix_timestamp
         .checked_add(duration_secs)
         .unwrap();
+    auction.total_extended = 0;  // Initialize extension tracker
     auction.bump = ctx.bumps.auction;
 
     // Increment auction count

@@ -4,16 +4,17 @@ import { useState } from "react";
 import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
+import toast from "react-hot-toast";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Gavel, Clock, Trophy, Plus, Flame, Loader2 } from "lucide-react";
+import { Gavel, Clock, Trophy, Plus, Flame, Loader2, Check, Gift, X } from "lucide-react";
 import { useAuctions, usePlaceBid } from "@/hooks/useAuctions";
 import { useProfile } from "@/hooks/useProfiles";
 import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
 import type { Auction } from "@/lib/supabase";
 import { useSolmatesProgram } from "@/lib/anchor/hooks";
-import { placeBid as onChainPlaceBid } from "@/lib/anchor/program";
+import { placeBid as onChainPlaceBid, claimAuction as onChainClaimAuction, cancelAuction as onChainCancelAuction } from "@/lib/anchor/program";
 import { CreateAuctionModal } from "@/components/auction/CreateAuctionModal";
 
 function formatTimeLeft(endDate: string): string {
@@ -47,11 +48,77 @@ export default function AuctionsPage() {
   const { connected, publicKey } = useWallet();
   const [bidAmounts, setBidAmounts] = useState<Record<string, string>>({});
   const [processingAuction, setProcessingAuction] = useState<string | null>(null);
+  const [claimingAuction, setClaimingAuction] = useState<string | null>(null);
+  const [cancellingAuction, setCancellingAuction] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   
-  const { auctions, loading, error, refetch } = useAuctions({ status: "active" });
+  // Fetch both active and ended auctions to show claim option for hosts
+  const { auctions: activeAuctions, loading, error, refetch } = useAuctions({ status: "active" });
+  const { auctions: endedAuctions, refetch: refetchEnded } = useAuctions({ status: "ended" });
   const { placeBid, loading: bidding } = usePlaceBid();
   const program = useSolmatesProgram();
+
+  // Combine active auctions with ended auctions where user is host (for claiming)
+  const myEndedAuctions = endedAuctions.filter(
+    (a) => a.host_wallet === publicKey?.toBase58() && a.highest_bidder_wallet
+  );
+  const allAuctions = [...activeAuctions, ...myEndedAuctions];
+
+  const handleClaimAuction = async (auction: Auction) => {
+    if (!publicKey || !program) return;
+    
+    setClaimingAuction(auction.id);
+    try {
+      toast.loading("Claiming auction proceeds...", { id: "claim-auction" });
+      const txSignature = await onChainClaimAuction(
+        program,
+        publicKey,
+        auction.auction_id
+      );
+      toast.success(`Claimed $${formatUsdc(auction.current_bid)} USDC! (1% fee sent to platform)`, { id: "claim-auction" });
+      
+      // Update auction status in Supabase
+      const supabase = (await import("@/lib/supabase")).getSupabase();
+      await supabase
+        .from("auctions")
+        .update({ status: "claimed", tx_signature: txSignature })
+        .eq("id", auction.id);
+      
+      refetch();
+      refetchEnded();
+    } catch (err: any) {
+      console.error("Error claiming auction:", err);
+      toast.error("Failed to claim auction", { id: "claim-auction" });
+    }
+    setClaimingAuction(null);
+  };
+
+  const handleCancelAuction = async (auction: Auction) => {
+    if (!publicKey || !program) return;
+    
+    setCancellingAuction(auction.id);
+    try {
+      toast.loading("Cancelling auction...", { id: "cancel-auction" });
+      await onChainCancelAuction(program, publicKey, auction.auction_id);
+      toast.success("Auction cancelled!", { id: "cancel-auction" });
+      
+      // Update auction status in Supabase
+      const supabase = (await import("@/lib/supabase")).getSupabase();
+      await supabase
+        .from("auctions")
+        .update({ status: "cancelled" })
+        .eq("id", auction.id);
+      
+      refetch();
+    } catch (err: any) {
+      console.error("Error cancelling auction:", err);
+      const errorMsg = err.message?.includes("AuctionHasBids") 
+        ? "Cannot cancel - auction has bids" 
+        : "Failed to cancel auction";
+      toast.error(errorMsg, { id: "cancel-auction" });
+    }
+    setCancellingAuction(null);
+  };
 
   const handleBid = async (auction: Auction) => {
     if (!publicKey || !program) return;
@@ -151,7 +218,7 @@ export default function AuctionsPage() {
             <p className="text-red-400 mb-4">{error}</p>
             <Button onClick={() => refetch()}>Try Again</Button>
           </div>
-        ) : auctions.length === 0 ? (
+        ) : allAuctions.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-zinc-500 mb-4">No active auctions at the moment</p>
             {connected && (
@@ -163,7 +230,7 @@ export default function AuctionsPage() {
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {auctions.map((auction) => (
+            {allAuctions.map((auction) => (
               <AuctionCard
                 key={auction.id}
                 auction={auction}
@@ -172,8 +239,13 @@ export default function AuctionsPage() {
                   setBidAmounts({ ...bidAmounts, [auction.id]: value })
                 }
                 onBid={() => handleBid(auction)}
+                onClaim={() => handleClaimAuction(auction)}
+                onCancel={() => handleCancelAuction(auction)}
                 connected={connected}
                 bidding={bidding}
+                claiming={claimingAuction === auction.id}
+                cancelling={cancellingAuction === auction.id}
+                isHost={auction.host_wallet === publicKey?.toBase58()}
               />
             ))}
           </div>
@@ -233,18 +305,31 @@ function AuctionCard({
   bidAmount,
   onBidAmountChange,
   onBid,
+  onClaim,
+  onCancel,
   connected,
   bidding,
+  claiming,
+  cancelling,
+  isHost,
 }: {
   auction: Auction;
   bidAmount: string;
   onBidAmountChange: (value: string) => void;
   onBid: () => void;
+  onClaim: () => void;
+  onCancel: () => void;
   connected: boolean;
   bidding: boolean;
+  claiming: boolean;
+  cancelling: boolean;
+  isHost: boolean;
 }) {
   const { profile } = useProfile(auction.host_wallet);
   const hot = isHotAuction(auction);
+  const isEnded = auction.status === "ended" || new Date(auction.end_time) < new Date();
+  const canClaim = isHost && isEnded && auction.highest_bidder_wallet && auction.status !== "claimed";
+  const canCancel = isHost && !isEnded && !auction.highest_bidder_wallet && auction.status === "active";
   
   const displayName = profile?.name || shortenAddress(auction.host_wallet);
   const minBid = formatUsdc(auction.current_bid + 1_000_000);
@@ -314,25 +399,51 @@ function AuctionCard({
           </div>
 
           {connected ? (
-            <div className="flex gap-2">
-              <Input
-                type="number"
-                placeholder={`Min: $${minBid}`}
-                value={bidAmount}
-                onChange={(e) => onBidAmountChange(e.target.value)}
-                className="flex-1"
-              />
-              <Button onClick={onBid} disabled={bidding || !bidAmount}>
-                {bidding ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+            canClaim ? (
+              <Button onClick={onClaim} disabled={claiming} className="w-full bg-emerald-500 hover:bg-emerald-600">
+                {claiming ? (
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 ) : (
-                  <>
-                    <Gavel className="w-4 h-4 mr-1.5" />
-                    Bid
-                  </>
+                  <Gift className="w-4 h-4 mr-1.5" />
                 )}
+                Claim ${formatUsdc(auction.current_bid)}
               </Button>
-            </div>
+            ) : canCancel ? (
+              <Button onClick={onCancel} disabled={cancelling} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20">
+                {cancelling ? (
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                ) : (
+                  <X className="w-4 h-4 mr-1.5" />
+                )}
+                Cancel Auction
+              </Button>
+            ) : isEnded ? (
+              <div className="p-2 bg-zinc-800 rounded-lg text-center">
+                <p className="text-xs text-zinc-400">
+                  {isHost ? "No bids to claim" : "Auction ended"}
+                </p>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder={`Min: $${minBid}`}
+                  value={bidAmount}
+                  onChange={(e) => onBidAmountChange(e.target.value)}
+                  className="flex-1"
+                />
+                <Button onClick={onBid} disabled={bidding || !bidAmount}>
+                  {bidding ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Gavel className="w-4 h-4 mr-1.5" />
+                      Bid
+                    </>
+                  )}
+                </Button>
+              </div>
+            )
           ) : (
             <p className="text-center text-xs text-zinc-600 py-2">
               Connect wallet to place a bid
