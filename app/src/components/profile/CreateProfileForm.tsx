@@ -107,7 +107,6 @@ export function CreateProfileForm() {
           );
           toast.success("On-chain profile created!", { id: "create-profile" });
         } catch (onChainError: any) {
-          console.error("On-chain error details:", onChainError);
           // Check for specific error types
           if (onChainError.message?.includes("User rejected") || 
               onChainError.message?.includes("rejected")) {
@@ -118,23 +117,34 @@ export function CreateProfileForm() {
               onChainError.message?.includes("lamports")) {
             throw new Error("Insufficient SOL for transaction fees. Get devnet SOL from faucet.solana.com");
           }
+          // Profile already exists on-chain - that's OK, just continue with Supabase
           if (onChainError.message?.includes("already in use") ||
-              onChainError.message?.includes("already been processed")) {
-            throw new Error("Profile already exists on-chain. Continuing with database profile...");
+              onChainError.message?.includes("already been processed") ||
+              onChainError.logs?.some((log: string) => log.includes("already in use"))) {
+            console.log("On-chain profile already exists, continuing with database profile...");
+            toast.success("On-chain profile exists!", { id: "create-profile" });
+            // Don't throw - continue to create Supabase profile
+          } else {
+            if (onChainError.logs) {
+              console.error("Transaction logs:", onChainError.logs);
+            }
+            // Re-throw with better message
+            throw new Error(onChainError.message || "Failed to create on-chain profile. Check console for details.");
           }
-          if (onChainError.logs) {
-            console.error("Transaction logs:", onChainError.logs);
-          }
-          // Re-throw with better message
-          throw new Error(onChainError.message || "Failed to create on-chain profile. Check console for details.");
         }
       }
 
       // Step 2: Create Supabase profile
+      const ageValue = parseInt(formData.age, 10);
+      
+      if (isNaN(ageValue) || ageValue < 18 || ageValue > 120) {
+        throw new Error(`Invalid age value: ${formData.age} (parsed: ${ageValue})`);
+      }
+      
       const result = await createProfile({
         wallet_address: publicKey.toBase58(),
         name: formData.name.trim(),
-        age: parseInt(formData.age),
+        age: ageValue,
         gender: formData.gender as GenderType,
         looking_for: lookingFor,
         bio: formData.bio.trim(),
@@ -142,19 +152,20 @@ export function CreateProfileForm() {
         occupation: formData.occupation.trim() || null,
         interests: interests,
         photos: [],
-        dm_price: parseFloat(formData.dmPrice) || 10,
+        // Convert USDC to lamports for database storage
+        dm_price: parseUsdc(formData.dmPrice) || parseUsdc(10),
       });
 
       if (result) {
         setSuccess(true);
-        toast.success("Profile created! Redirecting...");
-        // Redirect to discover page after a brief delay
-        setTimeout(() => {
-          router.push("/discover");
-        }, 1500);
-      } else if (createError) {
-        setError(createError);
-        toast.error(createError);
+        toast.success("Profile created! Redirecting...", { id: "create-profile" });
+        // Small delay to ensure database write is committed, then force refresh + redirect
+        await new Promise(resolve => setTimeout(resolve, 500));
+        router.refresh(); // Clear Next.js cache
+        router.replace("/discover");
+      } else {
+        // If result is null, throw an error to be caught
+        throw new Error("Failed to save profile to database");
       }
     } catch (err: any) {
       console.error("Error creating profile:", err);

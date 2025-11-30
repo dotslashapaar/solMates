@@ -1,7 +1,7 @@
 "use client";
 
 import { MapPin, MessageCircle, User } from "lucide-react";
-import { formatUsdc, shortenAddress } from "@/lib/constants";
+import { formatUsdc, shortenAddress, getGenderAvatar } from "@/lib/constants";
 import type { GenderType } from "@/lib/supabase/types";
 
 // Helper to format gender for display
@@ -46,27 +46,28 @@ export function ProfileCard({
   location,
   dmPrice,
   interests,
+  photos,
   gradient = "from-rose-500 to-pink-600",
   showActions = true,
   onMessage,
 }: ProfileCardProps) {
   const displayAddress = wallet || address || "";
   
+  // Get avatar URL - use photo if available, otherwise gender-based avatar
+  const avatarUrl = photos && photos.length > 0 
+    ? photos[0] 
+    : getGenderAvatar(displayAddress || name, gender);
+  
   return (
     <div className="bg-zinc-900 rounded-2xl overflow-hidden border border-white/[0.06] shadow-xl">
       {/* Profile Image Area */}
       <div className={`relative aspect-[3/4] bg-gradient-to-br ${gradient}`}>
-        {/* Subtle pattern overlay */}
-        <div className="absolute inset-0 opacity-5" style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-        }} />
-        
-        {/* Avatar Initial */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[100px] font-bold text-white/20">
-            {name.charAt(0).toUpperCase()}
-          </span>
-        </div>
+        {/* Gender-based avatar image */}
+        <img 
+          src={avatarUrl} 
+          alt={name}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
         
         {/* Bottom gradient - smooth fade to card background */}
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-900 from-10% via-zinc-900/60 via-50% to-transparent" />

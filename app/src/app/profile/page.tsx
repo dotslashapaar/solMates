@@ -19,9 +19,11 @@ import {
   Heart,
   Loader2,
   Plus,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
-import { useProfile, useUpdateProfile } from "@/hooks/useProfiles";
-import { shortenAddress, formatUsdc, parseUsdc } from "@/lib/constants";
+import { useProfile, useUpdateProfile, useDeleteProfile } from "@/hooks/useProfiles";
+import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
 import type { GenderType } from "@/lib/supabase/types";
 
 const GENDER_OPTIONS: { value: GenderType; label: string }[] = [
@@ -39,8 +41,10 @@ export default function ProfilePage() {
   const { connected, publicKey } = useWallet();
   const { profile, loading, error, refetch } = useProfile();
   const { updateProfile, loading: updating, error: updateError } = useUpdateProfile();
+  const { deleteProfile, loading: deleting, error: deleteError } = useDeleteProfile();
   
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     age: "",
@@ -65,7 +69,8 @@ export default function ProfilePage() {
         bio: profile.bio,
         location: profile.location || "",
         occupation: profile.occupation || "",
-        dmPrice: profile.dm_price.toString(),
+        // dm_price is stored in lamports, convert to USDC for display
+        dmPrice: formatUsdc(profile.dm_price),
       });
       setLookingFor(profile.looking_for || []);
       setInterests(profile.interests || []);
@@ -97,7 +102,8 @@ export default function ProfilePage() {
       location: formData.location.trim() || null,
       occupation: formData.occupation.trim() || null,
       interests: interests,
-      dm_price: parseFloat(formData.dmPrice) || 10,
+      // Convert USDC to lamports for database storage
+      dm_price: parseUsdc(formData.dmPrice) || parseUsdc(10),
     });
 
     if (success) {
@@ -118,13 +124,24 @@ export default function ProfilePage() {
         bio: profile.bio,
         location: profile.location || "",
         occupation: profile.occupation || "",
-        dmPrice: profile.dm_price.toString(),
+        // dm_price is stored in lamports, convert to USDC for display
+        dmPrice: formatUsdc(profile.dm_price),
       });
       setLookingFor(profile.looking_for || []);
       setInterests(profile.interests || []);
     }
     setIsEditing(false);
     setSaveError("");
+  };
+
+  const handleDelete = async () => {
+    if (!profile) return;
+    
+    const success = await deleteProfile(profile.wallet_address);
+    if (success) {
+      // Redirect to home or create profile page
+      window.location.href = "/";
+    }
   };
 
   if (!connected) {
@@ -213,10 +230,20 @@ export default function ProfilePage() {
               </div>
             </div>
             {!isEditing && (
-              <Button onClick={() => setIsEditing(true)} variant="ghost" size="sm">
-                <Edit2 className="w-4 h-4 mr-2" />
-                Edit
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setIsEditing(true)} variant="ghost" size="sm">
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+                <Button 
+                  onClick={() => setShowDeleteConfirm(true)} 
+                  variant="ghost" 
+                  size="sm"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             )}
           </div>
 
@@ -228,7 +255,7 @@ export default function ProfilePage() {
                   <img
                     src={
                       profile.photos?.[0] ||
-                      `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.wallet_address}`
+                      getGenderAvatar(profile.wallet_address, profile.gender)
                     }
                     alt={profile.name}
                     className="w-24 h-24 rounded-full bg-zinc-800 ring-2 ring-rose-500/20"
@@ -449,7 +476,7 @@ export default function ProfilePage() {
                     )}
                     <div className="flex items-center gap-2 text-sm text-zinc-400 col-span-2">
                       <DollarSign className="w-4 h-4 text-rose-400" />
-                      DM Price: ${profile.dm_price} USDC
+                      DM Price: {formatUsdc(profile.dm_price)} USDC
                     </div>
                   </div>
 
@@ -474,6 +501,50 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-white/[0.06] rounded-xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-500/10 rounded-full mx-auto mb-4">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-white text-center mb-2">
+              Delete Profile?
+            </h3>
+            <p className="text-zinc-400 text-sm text-center mb-6">
+              This action cannot be undone. Your profile, matches, and messages will be permanently deleted.
+            </p>
+            {deleteError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg mb-4">
+                <p className="text-red-400 text-xs text-center">{deleteError}</p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => setShowDeleteConfirm(false)} 
+                variant="ghost" 
+                className="flex-1"
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleDelete} 
+                disabled={deleting}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+              >
+                {deleting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

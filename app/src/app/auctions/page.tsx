@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Gavel, Clock, Trophy, Plus, Flame, Loader2 } from "lucide-react";
 import { useAuctions, usePlaceBid } from "@/hooks/useAuctions";
 import { useProfile } from "@/hooks/useProfiles";
-import { shortenAddress, formatUsdc, parseUsdc } from "@/lib/constants";
+import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
 import type { Auction } from "@/lib/supabase";
 import { useSolmatesProgram } from "@/lib/anchor/hooks";
 import { placeBid as onChainPlaceBid } from "@/lib/anchor/program";
@@ -262,7 +262,7 @@ function AuctionCard({
               />
             ) : (
               <img
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${auction.host_wallet}`}
+                src={getGenderAvatar(auction.host_wallet, profile?.gender)}
                 alt={displayName}
                 className="w-24 h-24"
               />

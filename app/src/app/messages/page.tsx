@@ -20,6 +20,7 @@ import { useProfiles } from "@/hooks/useProfiles";
 import type { Message, Profile } from "@/lib/supabase";
 import { useSolmatesProgram } from "@/lib/anchor/hooks";
 import { acceptDm, refundDm } from "@/lib/anchor/program";
+import { getGenderAvatar } from "@/lib/constants";
 
 function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -109,13 +110,13 @@ export default function MessagesPage() {
     setProcessingId(null);
   };
   
-  // Get profile image or generate avatar
+  // Get profile image or generate avatar based on gender
   const getProfileImage = (wallet: string) => {
     const profile = profileMap[wallet];
     if (profile?.photos && profile.photos.length > 0) {
       return profile.photos[0];
     }
-    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${wallet}`;
+    return getGenderAvatar(wallet, profile?.gender);
   };
   
   // Get profile name or shortened wallet

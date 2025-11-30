@@ -7,14 +7,17 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Users, Gift, Target, Plus, Check, Loader2 } from "lucide-react";
-import { useBounties, useCreateBounty } from "@/hooks/useBounties";
-import { useProfile } from "@/hooks/useProfiles";
-import { shortenAddress, formatUsdc, parseUsdc } from "@/lib/constants";
-import type { Bounty } from "@/lib/supabase";
+import { useBounties, useCreateBounty, useSubmitToBounty } from "@/hooks/useBounties";
+import { useProfile, useProfiles } from "@/hooks/useProfiles";
+import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
+import type { Bounty, Profile } from "@/lib/supabase";
 
 export default function BountiesPage() {
   const { connected, publicKey } = useWallet();
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [selectedBounty, setSelectedBounty] = useState<Bounty | null>(null);
+  const [selectedMatchProfile, setSelectedMatchProfile] = useState<string>("");
+  const [submissionNote, setSubmissionNote] = useState("");
   const [newBounty, setNewBounty] = useState({
     description: "",
     reward: "",
@@ -23,10 +26,30 @@ export default function BountiesPage() {
 
   const { bounties, loading, error, refetch } = useBounties({ status: "open" });
   const { createBounty, loading: creating } = useCreateBounty();
+  const { submitMatch, loading: submitting } = useSubmitToBounty();
+  const { profiles } = useProfiles();
 
-  const handleSubmitMatch = (bountyId: string) => {
-    console.log(`Submitting match for bounty ${bountyId}`);
-    // TODO: Open modal to submit a match
+  const handleSubmitMatch = (bounty: Bounty) => {
+    setSelectedBounty(bounty);
+    setSelectedMatchProfile("");
+    setSubmissionNote("");
+  };
+
+  const handleConfirmSubmission = async () => {
+    if (!publicKey || !selectedBounty || !selectedMatchProfile) return;
+    
+    const success = await submitMatch(
+      selectedBounty.id,
+      publicKey.toBase58(),
+      selectedMatchProfile,
+      submissionNote || undefined
+    );
+    
+    if (success) {
+      setSelectedBounty(null);
+      setSelectedMatchProfile("");
+      setSubmissionNote("");
+    }
   };
 
   const handleCreateBounty = async () => {
@@ -164,7 +187,7 @@ export default function BountiesPage() {
               <BountyCard
                 key={bounty.id}
                 bounty={bounty}
-                onSubmitMatch={() => handleSubmitMatch(bounty.id)}
+                onSubmitMatch={() => handleSubmitMatch(bounty)}
                 connected={connected}
               />
             ))}
@@ -212,6 +235,109 @@ export default function BountiesPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Submission Modal */}
+        {selectedBounty && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setSelectedBounty(null)}
+          >
+            <div 
+              className="bg-zinc-900 border border-white/[0.06] rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Submit a Match
+                </h3>
+                <p className="text-zinc-500 text-sm mb-6">
+                  Suggest someone for this bounty. If they accept, you earn ${formatUsdc(selectedBounty.reward_amount)} USDC!
+                </p>
+
+                {/* Bounty description */}
+                <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] mb-4">
+                  <p className="text-xs text-zinc-500 mb-1">Looking for:</p>
+                  <p className="text-sm text-zinc-300">{selectedBounty.description}</p>
+                </div>
+
+                {/* Select Profile */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Select a Profile to Suggest
+                  </label>
+                  <div className="max-h-48 overflow-y-auto space-y-2 border border-white/[0.06] rounded-lg p-2">
+                    {profiles
+                      .filter(p => p.wallet_address !== selectedBounty.issuer_wallet && p.wallet_address !== publicKey?.toBase58())
+                      .map((profile) => (
+                        <button
+                          key={profile.wallet_address}
+                          onClick={() => setSelectedMatchProfile(profile.wallet_address)}
+                          className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
+                            selectedMatchProfile === profile.wallet_address
+                              ? "bg-rose-500/20 border border-rose-500/30"
+                              : "bg-white/[0.03] border border-transparent hover:border-white/[0.1]"
+                          }`}
+                        >
+                          <img
+                            src={profile.photos?.[0] || getGenderAvatar(profile.wallet_address, profile.gender)}
+                            alt={profile.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                          <div className="text-left">
+                            <p className="text-sm font-medium text-white">{profile.name}, {profile.age}</p>
+                            <p className="text-xs text-zinc-500">{profile.location || shortenAddress(profile.wallet_address)}</p>
+                          </div>
+                          {selectedMatchProfile === profile.wallet_address && (
+                            <Check className="w-4 h-4 text-rose-400 ml-auto" />
+                          )}
+                        </button>
+                      ))}
+                    {profiles.filter(p => p.wallet_address !== selectedBounty.issuer_wallet && p.wallet_address !== publicKey?.toBase58()).length === 0 && (
+                      <p className="text-center text-zinc-500 text-sm py-4">No profiles available to suggest</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Optional Note */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Add a Note (Optional)
+                  </label>
+                  <textarea
+                    value={submissionNote}
+                    onChange={(e) => setSubmissionNote(e.target.value)}
+                    placeholder="Why do you think they'd be a great match?"
+                    rows={3}
+                    className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-rose-500/30"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3">
+                  <Button 
+                    variant="ghost" 
+                    className="flex-1"
+                    onClick={() => setSelectedBounty(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1"
+                    onClick={handleConfirmSubmission}
+                    disabled={!selectedMatchProfile || submitting}
+                  >
+                    {submitting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4 mr-2" />
+                    )}
+                    Submit Match
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

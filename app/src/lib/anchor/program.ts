@@ -177,12 +177,7 @@ export async function createProfile(
 
     return tx;
   } catch (error: any) {
-    // Log full error for debugging
-    console.error("createProfile error:", {
-      message: error.message,
-      logs: error.logs,
-      error: error,
-    });
+    // Re-throw - errors are handled by the caller
     throw error;
   }
 }

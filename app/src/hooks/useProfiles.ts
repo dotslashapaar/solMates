@@ -28,9 +28,9 @@ export function useProfile(walletAddress?: string) {
         .from("profiles")
         .select("*")
         .eq("wallet_address", address)
-        .single();
+        .maybeSingle(); // Use maybeSingle() to avoid 406 error when no profile exists
 
-      if (fetchError && fetchError.code !== "PGRST116") {
+      if (fetchError) {
         throw fetchError;
       }
 
@@ -107,9 +107,10 @@ export function useCreateProfile() {
 
     try {
       const supabase = getSupabase();
+      // Use upsert to handle case where profile already exists (e.g., after failed delete)
       const { data: newProfile, error: insertError } = await supabase
         .from("profiles")
-        .insert(data)
+        .upsert(data, { onConflict: "wallet_address" })
         .select()
         .single();
 
@@ -163,4 +164,35 @@ export function useUpdateProfile() {
   };
 
   return { updateProfile, loading, error };
+}
+
+export function useDeleteProfile() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const deleteProfile = async (walletAddress: string): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const supabase = getSupabase();
+      const { error: deleteError } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("wallet_address", walletAddress);
+
+      if (deleteError) throw deleteError;
+
+      return true;
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err);
+      console.error("Error deleting profile:", errorMsg);
+      setError(errorMsg);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { deleteProfile, loading, error };
 }

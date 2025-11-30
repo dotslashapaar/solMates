@@ -249,7 +249,7 @@ ALTER TABLE bounty_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE likes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE matches ENABLE ROW LEVEL SECURITY;
 
--- Profiles: Anyone can read active profiles, only owner can update
+-- Profiles: Anyone can read active profiles, only owner can update/delete
 CREATE POLICY "Public profiles are viewable by everyone" ON profiles
   FOR SELECT USING (is_active = true);
 
@@ -258,6 +258,9 @@ CREATE POLICY "Users can insert their own profile" ON profiles
 
 CREATE POLICY "Users can update own profile" ON profiles
   FOR UPDATE USING (true); -- Will be validated by wallet signature in app
+
+CREATE POLICY "Users can delete own profile" ON profiles
+  FOR DELETE USING (true); -- Will be validated by wallet signature in app
 
 -- Messages: Sender and recipient can view their messages
 CREATE POLICY "Users can view their messages" ON messages

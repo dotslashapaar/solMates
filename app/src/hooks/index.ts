@@ -1,5 +1,5 @@
 // Profile hooks
-export { useProfile, useProfiles, useCreateProfile, useUpdateProfile } from "./useProfiles";
+export { useProfile, useProfiles, useCreateProfile, useUpdateProfile, useDeleteProfile } from "./useProfiles";
 
 // Message hooks
 export { useMessages, useSendMessage, useUpdateMessageStatus } from "./useMessages";

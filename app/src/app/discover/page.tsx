@@ -5,10 +5,13 @@ import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { Button } from "@/components/ui/Button";
-import { Heart, X, Star, Loader2 } from "lucide-react";
+import { Heart, X, Star, Loader2, MessageCircle, DollarSign, Send } from "lucide-react";
 import { useProfiles, useProfile } from "@/hooks/useProfiles";
 import { useLikes, useLikeProfile } from "@/hooks/useMatching";
-import { shortenAddress } from "@/lib/constants";
+import { useSendMessage } from "@/hooks/useMessages";
+import { shortenAddress, formatUsdc, parseUsdc, getGenderAvatar } from "@/lib/constants";
+import { useSolmatesProgram } from "@/lib/anchor/hooks";
+import { depositForDm } from "@/lib/anchor/program";
 import type { Profile, GenderType } from "@/lib/supabase";
 
 // Gradient colors for profile cards
@@ -30,6 +33,10 @@ export default function DiscoverPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [passedWallets, setPassedWallets] = useState<string[]>([]);
   const [matchNotification, setMatchNotification] = useState<string | null>(null);
+  const [showDmModal, setShowDmModal] = useState(false);
+  const [dmMessage, setDmMessage] = useState("");
+  const [sendingDm, setSendingDm] = useState(false);
+  const [dmError, setDmError] = useState<string | null>(null);
 
   const walletAddress = publicKey?.toBase58();
   
@@ -47,6 +54,10 @@ export default function DiscoverPage() {
   
   // Like mutation hook
   const { likeProfile, loading: likingInProgress } = useLikeProfile();
+  
+  // DM hooks
+  const { sendMessage } = useSendMessage();
+  const program = useSolmatesProgram();
 
   // Filter out already liked, passed profiles, and apply gender preference matching
   const availableProfiles = profiles.filter((p) => {
@@ -99,6 +110,46 @@ export default function DiscoverPage() {
     }
   }, [currentProfile, currentIndex, availableProfiles.length]);
 
+  const handleSendDm = useCallback(async () => {
+    if (!currentProfile || !publicKey || !program || !dmMessage.trim()) return;
+    
+    setSendingDm(true);
+    setDmError(null);
+    
+    try {
+      // First, deposit on-chain
+      const txSignature = await depositForDm(
+        program,
+        publicKey,
+        new (await import("@solana/web3.js")).PublicKey(currentProfile.wallet_address),
+        currentProfile.dm_price
+      );
+      
+      // Then record in Supabase
+      await sendMessage({
+        sender_wallet: publicKey.toBase58(),
+        recipient_wallet: currentProfile.wallet_address,
+        content: dmMessage.trim(),
+        escrow_amount: currentProfile.dm_price,
+        escrow_status: "pending",
+        escrow_tx_signature: txSignature,
+      });
+      
+      setShowDmModal(false);
+      setDmMessage("");
+      
+      // Move to next profile after sending
+      if (currentIndex < availableProfiles.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    } catch (err: any) {
+      console.error("Error sending DM:", err);
+      setDmError(err.message || "Failed to send DM. Please try again.");
+    } finally {
+      setSendingDm(false);
+    }
+  }, [currentProfile, publicKey, program, dmMessage, sendMessage, currentIndex, availableProfiles.length]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -110,6 +161,13 @@ export default function DiscoverPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleLike, handlePass]);
+
+  // Refetch profiles when myProfile loads (handles fresh redirect from profile creation)
+  useEffect(() => {
+    if (myProfile && !myProfileLoading) {
+      refetch();
+    }
+  }, [myProfile, myProfileLoading, refetch]);
 
   if (!connected) {
     return (
@@ -264,6 +322,14 @@ export default function DiscoverPage() {
           </button>
           
           <button
+            onClick={() => setShowDmModal(true)}
+            disabled={likingInProgress || sendingDm}
+            className="w-12 h-12 rounded-full bg-zinc-900 border border-white/[0.06] flex items-center justify-center text-zinc-400 hover:text-cyan-400 hover:border-cyan-500/30 hover:bg-cyan-500/10 transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <MessageCircle className="w-5 h-5" strokeWidth={2} />
+          </button>
+          
+          <button
             onClick={() => handleLike(true)}
             disabled={likingInProgress}
             className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -301,6 +367,104 @@ export default function DiscoverPage() {
           </span>
         </div>
       </div>
+
+      {/* Send DM Modal */}
+      {showDmModal && currentProfile && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowDmModal(false)}
+        >
+          <div 
+            className="bg-zinc-900 border border-white/[0.06] rounded-xl max-w-md w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              {/* Header with profile info */}
+              <div className="flex items-center gap-3 mb-4">
+                <img
+                  src={currentProfile.photos?.[0] || getGenderAvatar(currentProfile.wallet_address, currentProfile.gender)}
+                  alt={currentProfile.name}
+                  className="w-12 h-12 rounded-full object-cover"
+                />
+                <div>
+                  <h3 className="font-semibold text-white">
+                    Message {currentProfile.name}
+                  </h3>
+                  <p className="text-zinc-500 text-sm flex items-center gap-1">
+                    <DollarSign className="w-3 h-3" />
+                    {formatUsdc(currentProfile.dm_price)} USDC
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-zinc-400 text-sm mb-4">
+                Send a paid message to get {currentProfile.name}&apos;s attention. 
+                If they accept, you can start chatting!
+              </p>
+
+              {/* Message Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Your Message
+                </label>
+                <textarea
+                  value={dmMessage}
+                  onChange={(e) => setDmMessage(e.target.value)}
+                  placeholder="Write something memorable..."
+                  rows={4}
+                  className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-rose-500/30 resize-none"
+                  maxLength={500}
+                />
+                <p className="text-xs text-zinc-600 text-right mt-1">
+                  {dmMessage.length}/500
+                </p>
+              </div>
+
+              {/* Error */}
+              {dmError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg mb-4">
+                  <p className="text-red-400 text-xs">{dmError}</p>
+                </div>
+              )}
+
+              {/* Cost breakdown */}
+              <div className="p-3 bg-white/[0.03] rounded-lg border border-white/[0.06] mb-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-zinc-400">DM Cost</span>
+                  <span className="text-white font-medium">{formatUsdc(currentProfile.dm_price)} USDC</span>
+                </div>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Held in escrow until accepted or expired (48h)
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <Button 
+                  variant="ghost" 
+                  className="flex-1"
+                  onClick={() => setShowDmModal(false)}
+                  disabled={sendingDm}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="flex-1"
+                  onClick={handleSendDm}
+                  disabled={!dmMessage.trim() || sendingDm}
+                >
+                  {sendingDm ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 mr-2" />
+                  )}
+                  Send DM
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

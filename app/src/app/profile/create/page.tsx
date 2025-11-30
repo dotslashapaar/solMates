@@ -16,6 +16,7 @@ export default function CreateProfilePage() {
               src="/logo.png"
               alt="SolMates Logo"
               fill
+              sizes="80px"
               className="object-cover"
             />
           </div>
@@ -46,6 +47,7 @@ export default function CreateProfilePage() {
                 src="/logo.png"
                 alt="SolMates Logo"
                 fill
+                sizes="64px"
                 className="object-cover"
               />
             </div>
